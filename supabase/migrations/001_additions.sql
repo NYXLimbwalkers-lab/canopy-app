@@ -31,3 +31,22 @@ ALTER TABLE reviews ADD COLUMN IF NOT EXISTS replied BOOLEAN GENERATED ALWAYS AS
 
 -- Add text alias for reviews.body (for backwards compat)
 ALTER TABLE reviews ADD COLUMN IF NOT EXISTS text TEXT GENERATED ALWAYS AS (body) STORED;
+
+-- Add connected flag to ad_accounts
+ALTER TABLE ad_accounts ADD COLUMN IF NOT EXISTS connected BOOLEAN DEFAULT false;
+
+-- AI Conversations table (chat history persistence)
+CREATE TABLE IF NOT EXISTS ai_conversations (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  company_id UUID NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+  messages JSONB NOT NULL DEFAULT '[]',
+  mode TEXT DEFAULT 'strategy',
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+ALTER TABLE ai_conversations ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "ai_conversations_company_isolation" ON ai_conversations
+  FOR ALL USING (company_id = get_my_company_id());
+
+CREATE INDEX IF NOT EXISTS idx_ai_conversations_company ON ai_conversations(company_id, created_at DESC);
