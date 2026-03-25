@@ -1,57 +1,50 @@
-import { DarkTheme, DefaultTheme, ThemeProvider } from '@react-navigation/native';
-import { useFonts } from 'expo-font';
-import { Stack } from 'expo-router';
-import * as SplashScreen from 'expo-splash-screen';
+import 'react-native-url-polyfill/auto';
 import { useEffect } from 'react';
-import 'react-native-reanimated';
+import { Stack, router } from 'expo-router';
+import * as SplashScreen from 'expo-splash-screen';
+import { useAuthStore } from '@/lib/stores/authStore';
+import { isSupabaseConfigured } from '@/lib/supabase';
 
-import { useColorScheme } from '@/components/useColorScheme';
+SplashScreen.preventAutoHideAsync();
 
-export {
-  // Catch any errors thrown by the Layout component.
-  ErrorBoundary,
-} from 'expo-router';
+export { ErrorBoundary } from 'expo-router';
 
 export const unstable_settings = {
-  // Ensure that reloading on `/modal` keeps a back button present.
   initialRouteName: '(tabs)',
 };
 
-// Prevent the splash screen from auto-hiding before asset loading is complete.
-SplashScreen.preventAutoHideAsync();
-
 export default function RootLayout() {
-  const [loaded, error] = useFonts({
-    SpaceMono: require('../assets/fonts/SpaceMono-Regular.ttf'),
-  });
-
-  // Expo Router uses Error Boundaries to catch errors in the navigation tree.
-  useEffect(() => {
-    if (error) throw error;
-  }, [error]);
+  const { initialize, isInitialized, session, company } = useAuthStore();
 
   useEffect(() => {
-    if (loaded) {
+    initialize().then(() => {
       SplashScreen.hideAsync();
+    });
+  }, []);
+
+  useEffect(() => {
+    if (!isInitialized) return;
+
+    if (!isSupabaseConfigured) {
+      // Dev mode — no env vars set. Show the login screen with a setup notice.
+      router.replace('/(auth)/login');
+      return;
     }
-  }, [loaded]);
 
-  if (!loaded) {
-    return null;
-  }
-
-  return <RootLayoutNav />;
-}
-
-function RootLayoutNav() {
-  const colorScheme = useColorScheme();
+    if (!session) {
+      router.replace('/(auth)/login');
+    } else if (company && !company.onboarding_completed_at) {
+      router.replace('/(onboarding)/welcome');
+    } else {
+      router.replace('/(tabs)/');
+    }
+  }, [isInitialized, session, company]);
 
   return (
-    <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
-      <Stack>
-        <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-        <Stack.Screen name="modal" options={{ presentation: 'modal' }} />
-      </Stack>
-    </ThemeProvider>
+    <Stack screenOptions={{ headerShown: false }}>
+      <Stack.Screen name="(tabs)" />
+      <Stack.Screen name="(auth)" />
+      <Stack.Screen name="(onboarding)" />
+    </Stack>
   );
 }

@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { supabase } from '../supabase';
+import { supabase, isSupabaseConfigured } from '../supabase';
 import type { Session, User } from '@supabase/supabase-js';
 
 export type UserRole = 'owner' | 'manager' | 'crew_lead' | 'estimator' | 'admin';
@@ -60,6 +60,11 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   isInitialized: false,
 
   initialize: async () => {
+    // Short-circuit immediately if Supabase isn't configured yet
+    if (!isSupabaseConfigured) {
+      set({ isInitialized: true });
+      return;
+    }
     try {
       const { data: { session } } = await supabase.auth.getSession();
       set({ session, user: session?.user ?? null });
@@ -68,8 +73,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         await get().fetchProfile();
       }
 
-      // Listen for auth changes
-      supabase.auth.onAuthStateChange(async (event, session) => {
+      supabase.auth.onAuthStateChange(async (_event, session) => {
         set({ session, user: session?.user ?? null });
         if (session?.user) {
           await get().fetchProfile();
