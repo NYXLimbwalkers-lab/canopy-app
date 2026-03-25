@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert, KeyboardAvoidingView, Platform } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, KeyboardAvoidingView, Platform } from 'react-native';
 import { router } from 'expo-router';
 import { Colors } from '@/constants/Colors';
 import { Theme } from '@/constants/Theme';
@@ -13,6 +13,7 @@ export default function LoginScreen() {
   const [magicMode, setMagicMode] = useState(false);
   const [magicSent, setMagicSent] = useState(false);
   const [errors, setErrors] = useState<{ email?: string; password?: string }>({});
+  const [submitError, setSubmitError] = useState<string | null>(null);
 
   const { signIn, sendMagicLink, isLoading } = useAuthStore();
 
@@ -26,14 +27,15 @@ export default function LoginScreen() {
   };
 
   const handleLogin = async () => {
+    setSubmitError(null);
     if (!validate()) return;
     if (magicMode) {
       const { error } = await sendMagicLink(email.trim().toLowerCase());
-      if (error) Alert.alert('Error', error);
+      if (error) setSubmitError(error);
       else setMagicSent(true);
     } else {
       const { error } = await signIn(email.trim().toLowerCase(), password);
-      if (error) Alert.alert('Login failed', error);
+      if (error) setSubmitError(error);
     }
   };
 
@@ -85,6 +87,12 @@ export default function LoginScreen() {
             />
           )}
 
+          {submitError ? (
+            <View style={styles.errorBanner}>
+              <Text style={styles.errorBannerText}>⚠️ {submitError}</Text>
+            </View>
+          ) : null}
+
           <Button
             label={magicMode ? 'Send magic link' : 'Sign in'}
             onPress={handleLogin}
@@ -126,6 +134,8 @@ const styles = StyleSheet.create({
   footer: { flexDirection: 'row', justifyContent: 'center', marginTop: 32, paddingBottom: 24 },
   footerText: { color: Colors.textSecondary, fontSize: Theme.font.size.body },
   footerLink: { color: Colors.primary, fontSize: Theme.font.size.body, fontWeight: Theme.font.weight.semibold },
+  errorBanner: { backgroundColor: '#3D1515', borderRadius: 8, padding: 12, borderWidth: 1, borderColor: '#7A2020' },
+  errorBannerText: { color: '#FF6B6B', fontSize: 14, textAlign: 'center' },
   emoji: { fontSize: 48 },
   title: { fontSize: Theme.font.size.headline, fontWeight: Theme.font.weight.bold, color: Colors.text, textAlign: 'center' },
   subtitle: { fontSize: Theme.font.size.body, color: Colors.textSecondary, textAlign: 'center', lineHeight: 24 },

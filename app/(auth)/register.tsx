@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert, KeyboardAvoidingView, Platform } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, KeyboardAvoidingView, Platform } from 'react-native';
 import { router } from 'expo-router';
 import { Colors } from '@/constants/Colors';
 import { Theme } from '@/constants/Theme';
@@ -14,6 +14,7 @@ export default function RegisterScreen() {
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [errors, setErrors] = useState<Record<string, string>>({});
+  const [submitError, setSubmitError] = useState<string | null>(null);
   const [emailSent, setEmailSent] = useState(false);
 
   const { signUp, isLoading } = useAuthStore();
@@ -32,6 +33,7 @@ export default function RegisterScreen() {
   };
 
   const handleRegister = async () => {
+    setSubmitError(null);
     if (!validate()) return;
     const { error } = await signUp(
       email.trim().toLowerCase(),
@@ -39,7 +41,7 @@ export default function RegisterScreen() {
       name.trim(),
       companyName.trim()
     );
-    if (error) Alert.alert('Sign up failed', error);
+    if (error) setSubmitError(error);
     else setEmailSent(true);
   };
 
@@ -79,6 +81,12 @@ export default function RegisterScreen() {
           <Input label="Password" value={password} onChangeText={setPassword} placeholder="Min. 8 characters" secureTextEntry autoComplete="new-password" error={errors.password} />
           <Input label="Confirm password" value={confirmPassword} onChangeText={setConfirmPassword} placeholder="Re-enter your password" secureTextEntry error={errors.confirmPassword} />
 
+          {submitError ? (
+            <View style={styles.errorBanner}>
+              <Text style={styles.errorBannerText}>⚠️ {submitError}</Text>
+            </View>
+          ) : null}
+
           <Button label="Start free trial →" onPress={handleRegister} loading={isLoading} size="lg" style={{ marginTop: 8 }} />
 
           <Text style={styles.terms}>By signing up you agree to our Terms of Service and Privacy Policy.</Text>
@@ -105,6 +113,8 @@ const styles = StyleSheet.create({
   form: { gap: Theme.space.md, backgroundColor: Colors.surface, padding: 24, borderRadius: Theme.radius.xl, ...Theme.shadow.md },
   formTitle: { fontSize: Theme.font.size.title, fontWeight: Theme.font.weight.bold, color: Colors.text, marginBottom: 4 },
   terms: { fontSize: Theme.font.size.caption, color: Colors.textTertiary, textAlign: 'center', lineHeight: 18 },
+  errorBanner: { backgroundColor: '#3D1515', borderRadius: 8, padding: 12, borderWidth: 1, borderColor: '#7A2020' },
+  errorBannerText: { color: '#FF6B6B', fontSize: 14, textAlign: 'center' },
   footer: { flexDirection: 'row', justifyContent: 'center', marginTop: 24, paddingBottom: 32 },
   footerText: { color: Colors.textSecondary, fontSize: Theme.font.size.body },
   footerLink: { color: Colors.primary, fontSize: Theme.font.size.body, fontWeight: Theme.font.weight.semibold },
