@@ -23,13 +23,37 @@ import { ScoreCard } from '@/components/ui/ScoreCard';
 import { useAuthStore } from '@/lib/stores/authStore';
 import { supabase } from '@/lib/supabase';
 
-type Platform = 'google' | 'facebook' | 'other';
+// Cross-platform alert helper (Alert.alert doesn't work on web)
+function crossAlert(
+  title: string,
+  message: string,
+  buttons?: Array<{ text: string; style?: string; onPress?: () => void }>
+) {
+  if (Platform.OS === 'web') {
+    const destructiveBtn = buttons?.find((b) => b.style === 'destructive');
+    const cancelBtn = buttons?.find((b) => b.style === 'cancel');
+    const actionBtn = destructiveBtn || buttons?.find((b) => b.style !== 'cancel');
+    if (actionBtn && cancelBtn) {
+      const confirmed = window.confirm(`${title}\n\n${message}`);
+      if (confirmed) actionBtn.onPress?.();
+    } else if (actionBtn) {
+      window.alert(`${title}\n\n${message}`);
+      actionBtn.onPress?.();
+    } else {
+      window.alert(`${title}\n\n${message}`);
+    }
+  } else {
+    Alert.alert(title, message, buttons as any);
+  }
+}
+
+type AdPlatform = 'google' | 'facebook' | 'other';
 type CampaignStatus = 'active' | 'paused' | 'ended' | 'draft';
 
 interface Campaign {
   id: string;
   name: string;
-  platform: Platform;
+  platform: AdPlatform;
   status: CampaignStatus;
   spend_total: number;
   leads_generated: number;
@@ -38,7 +62,7 @@ interface Campaign {
 }
 
 interface AdConnection {
-  platform: Platform;
+  platform: AdPlatform;
   connected: boolean;
   account_id: string | null;
   account_name: string | null;
@@ -74,10 +98,10 @@ function PlatformSection({
   campaigns,
   onConnect,
 }: {
-  platform: Platform;
+  platform: AdPlatform;
   connection: AdConnection | undefined;
   campaigns: Campaign[];
-  onConnect: (platform: Platform) => void;
+  onConnect: (platform: AdPlatform) => void;
 }) {
   const isConnected = connection?.connected ?? false;
   const platformCampaigns = campaigns.filter(c => c.platform === platform);
@@ -181,7 +205,7 @@ export default function AdsScreen() {
     fetchData().finally(() => setLoading(false));
   }, [fetchData]);
 
-  const handleConnect = (platform: Platform) => {
+  const handleConnect = (platform: AdPlatform) => {
     setConnectingPlatform(platform);
     setAccountInput('');
     setSaveError(null);
@@ -215,14 +239,14 @@ export default function AdsScreen() {
   };
 
   const handleNewCampaign = () => {
-    Alert.alert(
+    crossAlert(
       'Add Campaign',
       'Campaign creation is managed through your Google Ads or Facebook Ads account. Connect your ad account above to automatically import your campaigns.',
       [{ text: 'OK' }]
     );
   };
 
-  const getConnection = (platform: Platform) => connections.find(c => c.platform === platform);
+  const getConnection = (platform: AdPlatform) => connections.find(c => c.platform === platform);
 
   const activeCampaigns = campaigns.filter(c => c.status === 'active');
   const totalSpend = campaigns.reduce((s, c) => s + c.spend_total, 0);
