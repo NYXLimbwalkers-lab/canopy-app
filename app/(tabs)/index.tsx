@@ -9,7 +9,6 @@ import { EmptyState } from '@/components/ui/EmptyState';
 import { useAuthStore } from '@/lib/stores/authStore';
 import { supabase } from '@/lib/supabase';
 import { router } from 'expo-router';
-import { AIChat } from '@/components/AIChat';
 import { WeatherWidget } from '@/components/WeatherWidget';
 import { generateDailyBriefing, isAIConfigured } from '@/lib/ai';
 
@@ -212,7 +211,6 @@ export default function DashboardScreen() {
         </Card>
       )}
     </ScrollView>
-    <AIChat context={`Dashboard: ${data?.leadsToday ?? 0} leads today, $${data?.adSpendToday?.toFixed(0) ?? 0} ad spend, ${data?.activeCampaigns ?? 0} active campaigns.`} />
     </>
   );
 }
