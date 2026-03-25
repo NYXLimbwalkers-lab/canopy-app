@@ -653,7 +653,7 @@ Keep it conversational, authentic, and specific to tree service. Include [ACTION
     const { error } = await supabase.from('social_connections').upsert({
       company_id: company.id,
       platform: socialPlatform,
-      username: trimmed,
+      handle: trimmed,
       connected: true,
     }, { onConflict: 'company_id,platform' });
     setSocialSaving(false);

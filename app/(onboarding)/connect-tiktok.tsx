@@ -44,7 +44,7 @@ export default function ConnectTikTokStep() {
     const { error: dbErr } = await supabase.from('social_connections').upsert({
       company_id: company.id,
       platform: 'tiktok',
-      username: trimmed,
+      handle: trimmed,
       connected: true,
     }, { onConflict: 'company_id,platform' });
     setSaving(false);
