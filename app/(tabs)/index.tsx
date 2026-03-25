@@ -9,6 +9,9 @@ import { EmptyState } from '@/components/ui/EmptyState';
 import { useAuthStore } from '@/lib/stores/authStore';
 import { supabase } from '@/lib/supabase';
 import { router } from 'expo-router';
+import { AIChat } from '@/components/AIChat';
+import { WeatherWidget } from '@/components/WeatherWidget';
+import { generateDailyBriefing, isAIConfigured } from '@/lib/ai';
 
 interface DashboardData {
   leadsToday: number;
@@ -69,25 +72,15 @@ export default function DashboardScreen() {
   }, [fetchData]);
 
   const fetchBriefing = useCallback(async () => {
-    const key = process.env.EXPO_PUBLIC_OPENROUTER_KEY;
-    if (!key || !company) return;
+    if (!isAIConfigured() || !company) return;
     try {
-      const resp = await globalThis.fetch('https://openrouter.ai/api/v1/chat/completions', {
-        method: 'POST',
-        headers: { 'Authorization': `Bearer ${key}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          model: 'anthropic/claude-3-haiku',
-          messages: [{
-            role: 'user',
-            content: `You are a business advisor for ${company.name}, a tree service company in ${company.city ?? 'their city'}. Write a 1-sentence morning briefing that's motivating and action-oriented. Be specific to tree service. Under 30 words.`,
-          }],
-          max_tokens: 60,
-        }),
-      });
-      const json = await resp.json();
-      setBriefing(json.choices?.[0]?.message?.content ?? null);
+      const text = await generateDailyBriefing(
+        { name: company.name, city: company.city, state: company.state, services: company.services_offered },
+        { leadsToday: data?.leadsToday ?? 0, adSpend: data?.adSpendToday ?? 0 }
+      );
+      setBriefing(text);
     } catch {}
-  }, [company]);
+  }, [company, data]);
 
   useEffect(() => {
     fetchData().finally(() => setLoading(false));
@@ -105,6 +98,7 @@ export default function DashboardScreen() {
   };
 
   return (
+    <>
     <ScrollView
       style={styles.container}
       contentContainerStyle={styles.content}
@@ -169,6 +163,9 @@ export default function DashboardScreen() {
       )}
 
       {/* Recent Leads */}
+      {/* Weather / Storm Alert */}
+      <WeatherWidget onStormDetected={(w) => setBriefing(w.alertMessage ?? null)} />
+
       <Text style={styles.sectionTitle}>Recent leads</Text>
       {!data || data.recentLeads.length === 0 ? (
         <EmptyState
@@ -212,6 +209,8 @@ export default function DashboardScreen() {
         </Card>
       )}
     </ScrollView>
+    <AIChat context={`Dashboard: ${data?.leadsToday ?? 0} leads today, $${data?.adSpendToday?.toFixed(0) ?? 0} ad spend, ${data?.activeCampaigns ?? 0} active campaigns.`} />
+    </>
   );
 }
 
