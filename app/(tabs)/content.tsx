@@ -10,7 +10,10 @@ import {
   RefreshControl,
   Linking,
   Share,
+  KeyboardAvoidingView,
+  Platform,
 } from 'react-native';
+import { Input } from '@/components/ui/Input';
 import { Theme } from '@/constants/Theme';
 import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
@@ -518,6 +521,11 @@ export default function ContentScreen() {
   const [videoJobId,        setVideoJobId]        = useState<string | null>(null);
   const [videoInvokeError,  setVideoInvokeError]  = useState<string | null>(null);
   const [generatingVideo,   setGeneratingVideo]   = useState(false);
+  const [socialModal,       setSocialModal]       = useState(false);
+  const [socialPlatform,    setSocialPlatform]    = useState<string | null>(null);
+  const [socialInput,       setSocialInput]       = useState('');
+  const [socialSaving,      setSocialSaving]      = useState(false);
+  const [socialError,       setSocialError]       = useState<string | null>(null);
 
   // ── Data fetching ──────────────────────────────────────────────────────────
   const fetchData = useCallback(async () => {
@@ -625,6 +633,40 @@ Keep it conversational, authentic, and specific to tree service. Include [ACTION
     }
   };
 
+  // ── Social connect ─────────────────────────────────────────────────────────
+  const handleSocialConnect = (platformKey: string) => {
+    setSocialPlatform(platformKey);
+    setSocialInput('');
+    setSocialError(null);
+    setSocialModal(true);
+  };
+
+  const handleSaveSocial = async () => {
+    if (!company || !socialPlatform) return;
+    const trimmed = socialInput.trim();
+    if (!trimmed) {
+      setSocialError('Please enter your username or handle.');
+      return;
+    }
+    setSocialSaving(true);
+    setSocialError(null);
+    const { error } = await supabase.from('social_connections').upsert({
+      company_id: company.id,
+      platform: socialPlatform,
+      username: trimmed,
+      connected: true,
+    }, { onConflict: 'company_id,platform' });
+    setSocialSaving(false);
+    if (error) {
+      setSocialError(error.message);
+      return;
+    }
+    setSocialModal(false);
+    setSocialInput('');
+    setSocialPlatform(null);
+    await fetchData();
+  };
+
   // ── Helpers ────────────────────────────────────────────────────────────────
   const postTitle = (p: ContentPost) =>
     p.video_type
@@ -639,6 +681,7 @@ Keep it conversational, authentic, and specific to tree service. Include [ACTION
 
   // ── Render ─────────────────────────────────────────────────────────────────
   return (
+    <>
     <ScrollView
       style={s.container}
       contentContainerStyle={s.content}
@@ -761,7 +804,7 @@ Keep it conversational, authentic, and specific to tree service. Include [ACTION
                 ) : (
                   <TouchableOpacity
                     style={s.connectBtn}
-                    onPress={() => {}}
+                    onPress={() => handleSocialConnect(platform.key)}
                     activeOpacity={0.8}
                   >
                     <Text style={s.connectBtnText}>Connect</Text>
@@ -900,6 +943,63 @@ Keep it conversational, authentic, and specific to tree service. Include [ACTION
         onClose={() => { setVideoModal(false); setVideoJobId(null); setVideoInvokeError(null); }}
       />
     </ScrollView>
+
+    {/* ── Social Connect Modal ── */}
+    <Modal
+      visible={socialModal}
+      transparent
+      animationType="slide"
+      onRequestClose={() => setSocialModal(false)}
+    >
+      <KeyboardAvoidingView
+        style={s.socialModalOverlay}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      >
+        <View style={s.socialModalSheet}>
+          <View style={s.socialModalHandle} />
+          <Text style={s.socialModalTitle}>
+            {socialPlatform === 'tiktok' && 'Connect TikTok'}
+            {socialPlatform === 'instagram' && 'Connect Instagram'}
+            {socialPlatform === 'youtube' && 'Connect YouTube'}
+          </Text>
+          <Input
+            label={
+              socialPlatform === 'youtube'
+                ? 'YouTube channel URL or handle'
+                : socialPlatform === 'instagram'
+                ? 'Instagram handle'
+                : 'TikTok username'
+            }
+            placeholder={
+              socialPlatform === 'youtube'
+                ? 'youtube.com/@limbwalkertrees'
+                : '@limbwalkertrees'
+            }
+            value={socialInput}
+            onChangeText={setSocialInput}
+            autoCapitalize="none"
+            autoCorrect={false}
+            error={socialError ?? undefined}
+          />
+          <TouchableOpacity
+            style={[s.socialSaveBtn, socialSaving && { opacity: 0.7 }]}
+            onPress={handleSaveSocial}
+            activeOpacity={0.85}
+            disabled={socialSaving}
+          >
+            <Text style={s.socialSaveBtnText}>{socialSaving ? 'Saving…' : 'Save & Connect'}</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={s.socialCancelBtn}
+            onPress={() => { setSocialModal(false); setSocialInput(''); setSocialError(null); }}
+            activeOpacity={0.7}
+          >
+            <Text style={s.socialCancelBtnText}>Cancel</Text>
+          </TouchableOpacity>
+        </View>
+      </KeyboardAvoidingView>
+    </Modal>
+    </>
   );
 }
 
@@ -971,6 +1071,15 @@ const s = StyleSheet.create({
   connectedText:    { fontSize: 12, fontWeight: '700' as const },
   connectBtn:       { borderWidth: 1.5, borderColor: '#333333', borderRadius: Theme.radius.lg, paddingHorizontal: 16, paddingVertical: 8 },
   connectBtnText:   { fontSize: Theme.font.size.small, fontWeight: Theme.font.weight.semibold, color: '#FFFFFF' },
+  // Social connect modal
+  socialModalOverlay:  { flex: 1, backgroundColor: 'rgba(0,0,0,0.65)', justifyContent: 'flex-end' },
+  socialModalSheet:    { backgroundColor: '#142B1F', borderTopLeftRadius: 20, borderTopRightRadius: 20, padding: 24, gap: 16, paddingBottom: 44 },
+  socialModalHandle:   { width: 36, height: 4, borderRadius: 2, backgroundColor: D.border, alignSelf: 'center', marginBottom: 8 },
+  socialModalTitle:    { fontSize: Theme.font.size.title, fontWeight: Theme.font.weight.bold, color: D.text },
+  socialSaveBtn:       { backgroundColor: '#22C55E', borderRadius: Theme.radius.lg, paddingVertical: 16, alignItems: 'center' },
+  socialSaveBtnText:   { fontSize: Theme.font.size.body, fontWeight: Theme.font.weight.bold, color: '#FFFFFF' },
+  socialCancelBtn:     { paddingVertical: 10, alignItems: 'center' },
+  socialCancelBtnText: { fontSize: Theme.font.size.body, color: D.textSec },
 });
 
 // ─── Script modal styles ──────────────────────────────────────────────────────

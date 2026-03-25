@@ -7,8 +7,11 @@ import {
   RefreshControl,
   TouchableOpacity,
   ActivityIndicator,
-  Alert,
+  Modal,
+  KeyboardAvoidingView,
+  Platform,
 } from 'react-native';
+import { Input } from '@/components/ui/Input';
 import { Colors } from '@/constants/Colors';
 import { Theme } from '@/constants/Theme';
 import { Badge } from '@/components/ui/Badge';
@@ -145,6 +148,11 @@ export default function AdsScreen() {
   const [connections, setConnections] = useState<AdConnection[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [connectModal, setConnectModal] = useState(false);
+  const [connectingPlatform, setConnectingPlatform] = useState<Platform | null>(null);
+  const [accountInput, setAccountInput] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
 
   const fetchData = useCallback(async () => {
     if (!company) return;
@@ -173,12 +181,36 @@ export default function AdsScreen() {
   }, [fetchData]);
 
   const handleConnect = (platform: Platform) => {
-    const platformName = PLATFORM_NAMES[platform];
-    Alert.alert(
-      `Connect ${platformName}`,
-      `To connect ${platformName}, go to your ${platformName} account settings and generate an API key or use the OAuth flow. OAuth integration is coming soon — for now you can manually add campaigns below.`,
-      [{ text: 'OK' }]
-    );
+    setConnectingPlatform(platform);
+    setAccountInput('');
+    setSaveError(null);
+    setConnectModal(true);
+  };
+
+  const handleSaveConnection = async () => {
+    if (!company || !connectingPlatform) return;
+    const trimmed = accountInput.trim();
+    if (!trimmed) {
+      setSaveError('Please enter your account ID.');
+      return;
+    }
+    setSaving(true);
+    setSaveError(null);
+    const { error } = await supabase.from('ad_accounts').upsert({
+      company_id: company.id,
+      platform: connectingPlatform,
+      account_id: trimmed,
+      connected: true,
+    }, { onConflict: 'company_id,platform' });
+    setSaving(false);
+    if (error) {
+      setSaveError(error.message);
+      return;
+    }
+    setConnectModal(false);
+    setAccountInput('');
+    setConnectingPlatform(null);
+    await fetchData();
   };
 
   const handleNewCampaign = () => {
@@ -197,6 +229,7 @@ export default function AdsScreen() {
   const overallCpl = totalLeads > 0 ? totalSpend / totalLeads : null;
 
   return (
+    <View style={styles.flex}>
     <ScrollView
       style={styles.container}
       contentContainerStyle={styles.content}
@@ -308,10 +341,57 @@ export default function AdsScreen() {
         </>
       )}
     </ScrollView>
+
+    {/* ── Connect Ad Account Modal ── */}
+    <Modal
+      visible={connectModal}
+      transparent
+      animationType="slide"
+      onRequestClose={() => setConnectModal(false)}
+    >
+      <KeyboardAvoidingView
+        style={styles.modalOverlay}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      >
+        <View style={styles.modalSheet}>
+          <View style={styles.modalHandle} />
+          <Text style={styles.modalTitle}>
+            {connectingPlatform === 'google' ? 'Connect Google Ads' : 'Connect Facebook Ads'}
+          </Text>
+          <Text style={styles.modalSubtitle}>
+            {connectingPlatform === 'google'
+              ? 'Open Google Ads → click the question mark (?) at the top right → your Customer ID is shown (format: 123-456-7890).'
+              : 'Open Meta Business Suite → Settings → Ad Accounts → copy the Account ID (format: act_XXXXXXXXXX).'}
+          </Text>
+          <Input
+            label={connectingPlatform === 'google' ? 'Customer ID' : 'Ad Account ID'}
+            placeholder={connectingPlatform === 'google' ? '123-456-7890' : 'act_XXXXXXXXXX'}
+            value={accountInput}
+            onChangeText={setAccountInput}
+            autoCapitalize="none"
+            autoCorrect={false}
+            error={saveError ?? undefined}
+          />
+          <Button
+            label={saving ? 'Saving…' : 'Save & Connect'}
+            onPress={handleSaveConnection}
+            size="lg"
+            disabled={saving}
+          />
+          <Button
+            label="Cancel"
+            variant="ghost"
+            onPress={() => { setConnectModal(false); setAccountInput(''); setSaveError(null); }}
+          />
+        </View>
+      </KeyboardAvoidingView>
+    </Modal>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
+  flex: { flex: 1 },
   container: { flex: 1, backgroundColor: Colors.background },
   content: { padding: Theme.layout.screenPadding, gap: Theme.space.lg, paddingBottom: 40, paddingTop: 60 },
   headerRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
@@ -356,4 +436,10 @@ const styles = StyleSheet.create({
   tipItem: { flexDirection: 'row', gap: Theme.space.sm },
   tipDot: { color: Colors.primary, fontSize: Theme.font.size.body },
   tipText: { fontSize: Theme.font.size.body, color: Colors.textSecondary, flex: 1 },
+  // Modal
+  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'flex-end' },
+  modalSheet: { backgroundColor: '#142B1F', borderTopLeftRadius: 20, borderTopRightRadius: 20, padding: 24, gap: 16, paddingBottom: 40 },
+  modalHandle: { width: 36, height: 4, borderRadius: 2, backgroundColor: Colors.border, alignSelf: 'center', marginBottom: 8 },
+  modalTitle: { fontSize: Theme.font.size.title, fontWeight: Theme.font.weight.bold, color: Colors.text },
+  modalSubtitle: { fontSize: Theme.font.size.small, color: Colors.textSecondary, lineHeight: 20 },
 });
