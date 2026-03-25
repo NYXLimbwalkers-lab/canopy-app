@@ -24,7 +24,13 @@ export default function TabsLayout() {
       <Tabs.Screen
         name="index"
         options={{
-          tabBarIcon: ({ focused }) => <TabIcon emoji="📊" label="Dashboard" focused={focused} />,
+          tabBarIcon: ({ focused }) => <TabIcon emoji="📊" label="Home" focused={focused} />,
+        }}
+      />
+      <Tabs.Screen
+        name="ai"
+        options={{
+          tabBarIcon: ({ focused }) => <TabIcon emoji="🧠" label="AI Advisor" focused={focused} />,
         }}
       />
       <Tabs.Screen
@@ -77,7 +83,7 @@ const styles = StyleSheet.create({
     paddingTop: 8,
   },
   tabIcon: { alignItems: 'center', gap: 2 },
-  tabEmoji: { fontSize: 22 },
-  tabLabel: { fontSize: 10, color: Colors.textTertiary, fontWeight: Theme.font.weight.medium },
+  tabEmoji: { fontSize: 20 },
+  tabLabel: { fontSize: 9, color: Colors.textTertiary, fontWeight: Theme.font.weight.medium },
   tabLabelActive: { color: Colors.primary },
 });
