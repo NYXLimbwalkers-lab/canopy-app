@@ -52,6 +52,12 @@ export default function TabsLayout() {
         }}
       />
       <Tabs.Screen
+        name="settings"
+        options={{
+          tabBarIcon: ({ focused }) => <TabIcon emoji="⚙️" label="Settings" focused={focused} />,
+        }}
+      />
+      <Tabs.Screen
         name="billing"
         options={{
           href: null,

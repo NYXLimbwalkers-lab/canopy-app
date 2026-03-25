@@ -23,16 +23,16 @@ export const Colors = {
   info: '#3B82F6',
   infoBg: '#DBEAFE',
 
-  // Neutrals (light mode)
-  background: '#F9FAFB',
-  surface: '#FFFFFF',
-  surfaceSecondary: '#F3F4F6',
-  border: '#E5E7EB',
-  borderStrong: '#D1D5DB',
-  text: '#111827',
-  textSecondary: '#6B7280',
-  textTertiary: '#9CA3AF',
-  textInverse: '#FFFFFF',
+  // Neutrals (dark forest theme)
+  background: '#0E1A14',
+  surface: '#142B1F',
+  surfaceSecondary: '#1A3326',
+  border: '#2A4035',
+  borderStrong: '#3A5548',
+  text: '#F0F9F4',
+  textSecondary: '#8BAF9A',
+  textTertiary: '#5C7A6B',
+  textInverse: '#0E1A14',
 
   // Dark mode surfaces
   dark: {

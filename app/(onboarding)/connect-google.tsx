@@ -10,13 +10,12 @@ export default function ConnectGoogleStep() {
   const { updateOnboardingStep } = useAuthStore();
 
   const handleConnect = async () => {
-    // OAuth flow will be completed in production. For now advance to next step.
-    await updateOnboardingStep(4);
+    try { await updateOnboardingStep(4); } catch {}
     router.push('/(onboarding)/connect-facebook');
   };
 
   const handleSkip = async () => {
-    await updateOnboardingStep(4);
+    try { await updateOnboardingStep(4); } catch {}
     router.push('/(onboarding)/connect-facebook');
   };
 

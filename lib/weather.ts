@@ -78,17 +78,45 @@ function classifyStorm(weather: any, wind: any, alerts: any[]): Pick<WeatherCond
   return { isStorm: false, stormType: 'none', severity: 'none' };
 }
 
+/** Normalize a city string for OWM lookup.
+ *  "springhill" → ["Springhill", "Spring Hill"]
+ *  "neworleans" → ["Neworleans", "New Orleans"] (best-effort split)
+ */
+function normalizeCityVariants(raw: string): string[] {
+  const clean = raw.trim();
+  // Title-case as-is
+  const titled = clean.replace(/\b\w/g, c => c.toUpperCase());
+  // Try inserting a space before the last capitalisable chunk if it looks compound
+  // e.g. "springhill" → title "Springhill" → also try "Spring Hill"
+  const withSpaces = titled.replace(/([a-z])([A-Z])/g, '$1 $2');
+  const variants: string[] = [titled];
+  if (withSpaces !== titled) variants.push(withSpaces);
+  return variants;
+}
+
 /** Get current weather + storm status for a city */
 export async function getWeather(city: string, state?: string): Promise<WeatherCondition> {
   const key = getKey();
   if (!key) throw new Error('OpenWeatherMap key not configured');
 
-  const location = state ? `${city},${state},US` : `${city},US`;
+  const stateCode = state && state.length === 2 ? state.toUpperCase() : null;
+  const cityVariants = normalizeCityVariants(city);
 
-  // Use One Call API for full data including alerts
-  // First get coordinates
-  const geoResp = await fetch(`${GEO_BASE}/direct?q=${encodeURIComponent(location)}&limit=1&appid=${key}`);
-  const geoData = await geoResp.json();
+  let geoData: any[] = [];
+
+  for (const variant of cityVariants) {
+    if (geoData.length) break;
+    // Try with state code first, then bare city
+    const candidates = stateCode
+      ? [`${variant},${stateCode},US`, `${variant},US`]
+      : [`${variant},US`];
+    for (const loc of candidates) {
+      if (geoData.length) break;
+      const r = await fetch(`${GEO_BASE}/direct?q=${encodeURIComponent(loc)}&limit=1&appid=${key}`);
+      const d = await r.json();
+      if (Array.isArray(d) && d.length) geoData = d;
+    }
+  }
 
   if (!geoData.length) throw new Error(`City not found: ${city}`);
 

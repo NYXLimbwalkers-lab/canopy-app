@@ -8,9 +8,11 @@ const supabaseAnonKey = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY;
 export const isSupabaseConfigured =
   Boolean(supabaseUrl) && Boolean(supabaseAnonKey);
 
-// Always create a real client — use placeholder values when env vars are absent
-// so the app renders instead of crashing at module load time.
-// Fake JWT-shaped key so supabase-js passes key format validation in dev
+// AsyncStorage uses window.localStorage under the hood on web.
+// During SSR (Node.js render), window is not defined — use undefined storage
+// so Supabase skips session persistence on the server.
+const isBrowser = typeof window !== 'undefined';
+
 const PLACEHOLDER_KEY =
   'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRldiIsInJvbGUiOiJhbm9uIn0.dev';
 
@@ -19,9 +21,10 @@ export const supabase = createClient(
   supabaseAnonKey || PLACEHOLDER_KEY,
   {
     auth: {
-      storage: AsyncStorage,
-      autoRefreshToken: isSupabaseConfigured,
-      persistSession: isSupabaseConfigured,
+      // Only use persistent storage in the browser, never during SSR
+      storage: isBrowser ? AsyncStorage : undefined,
+      autoRefreshToken: isBrowser && isSupabaseConfigured,
+      persistSession: isBrowser && isSupabaseConfigured,
       detectSessionInUrl: false,
     },
   }

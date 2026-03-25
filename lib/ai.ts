@@ -4,7 +4,7 @@
 const OPENROUTER_BASE = 'https://openrouter.ai/api/v1';
 
 function getKey(): string {
-  return process.env.EXPO_PUBLIC_OPENROUTER_KEY ?? '';
+  return process.env.EXPO_PUBLIC_OPENROUTER_API_KEY ?? '';
 }
 
 export function isAIConfigured(): boolean {
@@ -30,7 +30,7 @@ const MODEL_MAP = {
 
 export async function aiChat(messages: ChatMessage[], options: AIOptions = {}): Promise<string> {
   const key = getKey();
-  if (!key) throw new Error('OpenRouter key not configured. Add EXPO_PUBLIC_OPENROUTER_KEY to .env');
+  if (!key) throw new Error('OpenRouter key not configured. Add EXPO_PUBLIC_OPENROUTER_API_KEY to .env');
 
   const model = MODEL_MAP[options.model ?? 'fast'];
 

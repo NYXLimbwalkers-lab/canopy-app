@@ -71,21 +71,24 @@ export default function DashboardScreen() {
     setRefreshing(false);
   }, [fetchData]);
 
-  const fetchBriefing = useCallback(async () => {
+  const fetchBriefing = useCallback(async (leadsToday = 0, adSpend = 0) => {
     if (!isAIConfigured() || !company) return;
     try {
       const text = await generateDailyBriefing(
         { name: company.name, city: company.city, state: company.state, services: company.services_offered },
-        { leadsToday: data?.leadsToday ?? 0, adSpend: data?.adSpendToday ?? 0 }
+        { leadsToday, adSpend }
       );
       setBriefing(text);
     } catch {}
-  }, [company, data]);
+  }, [company]);
 
   useEffect(() => {
     fetchData().finally(() => setLoading(false));
-    fetchBriefing();
-  }, [fetchData, fetchBriefing]);
+  }, [fetchData]);
+
+  useEffect(() => {
+    if (data) fetchBriefing(data.leadsToday, data.adSpendToday);
+  }, [company]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const getHour = () => new Date().getHours();
   const greeting = getHour() < 12 ? 'Good morning' : getHour() < 17 ? 'Good afternoon' : 'Good evening';
@@ -110,7 +113,7 @@ export default function DashboardScreen() {
           <Text style={styles.greeting}>{greeting}, {profile?.name?.split(' ')[0] ?? 'there'} 👋</Text>
           <Text style={styles.company}>{company?.name}</Text>
         </View>
-        <TouchableOpacity style={styles.aiBtn} onPress={fetchBriefing}>
+        <TouchableOpacity style={styles.aiBtn} onPress={() => fetchBriefing(data?.leadsToday, data?.adSpendToday)}>
           <Text style={styles.aiBtnText}>🤖</Text>
         </TouchableOpacity>
       </View>

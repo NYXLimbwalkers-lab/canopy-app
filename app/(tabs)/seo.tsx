@@ -24,15 +24,13 @@ import { supabase } from '@/lib/supabase';
 
 interface GbpProfile {
   id: string;
-  score: number;
+  completeness_score: number;
   name: string | null;
   address: string | null;
   phone: string | null;
   website: string | null;
-  hours_set: boolean;
-  photos_count: number;
-  reviews_count: number;
-  avg_rating: number | null;
+  hours: any;
+  photos: string[] | null;
   last_synced_at: string | null;
 }
 
@@ -41,24 +39,23 @@ interface KeywordRanking {
   keyword: string;
   position: number | null;
   previous_position: number | null;
-  search_volume: number | null;
-  updated_at: string;
+  checked_at: string;
 }
 
 interface Review {
   id: string;
   reviewer_name: string;
   rating: number;
-  text: string | null;
-  replied: boolean;
-  created_at: string;
-  source: string;
+  body: string | null;
+  responded_at: string | null;
+  review_date: string;
+  platform: string;
 }
 
 interface Citation {
   id: string;
-  directory: string;
-  claimed: boolean;
+  directory_name: string;
+  status: string;
   url: string | null;
 }
 
@@ -152,6 +149,10 @@ export default function SeoScreen() {
   const [replyModal, setReplyModal] = useState<Review | null>(null);
   const [replyText, setReplyText] = useState('');
   const [generatingReply, setGeneratingReply] = useState(false);
+  const [gbpConnectModal, setGbpConnectModal] = useState(false);
+  const [gbpUrl, setGbpUrl] = useState('');
+  const [gbpSaving, setGbpSaving] = useState(false);
+  const [gbpSaveSuccess, setGbpSaveSuccess] = useState(false);
 
   const fetchData = useCallback(async () => {
     if (!company) return;
@@ -159,7 +160,7 @@ export default function SeoScreen() {
       supabase.from('gbp_profiles').select('*').eq('company_id', company.id).maybeSingle(),
       supabase.from('keyword_rankings').select('*').eq('company_id', company.id).order('position', { ascending: true, nullsFirst: false }),
       supabase.from('reviews').select('*').eq('company_id', company.id).order('created_at', { ascending: false }).limit(20),
-      supabase.from('citations').select('*').eq('company_id', company.id).order('claimed', { ascending: false }),
+      supabase.from('citations').select('*').eq('company_id', company.id).order('status', { ascending: true }),
     ]);
     setGbp(gbpRes.data ?? null);
     setKeywords(kwRes.data ?? []);
@@ -178,7 +179,7 @@ export default function SeoScreen() {
   }, [fetchData]);
 
   const generateContentIdea = async () => {
-    const key = process.env.EXPO_PUBLIC_OPENROUTER_KEY;
+    const key = process.env.EXPO_PUBLIC_OPENROUTER_API_KEY;
     if (!key || !company) {
       setGeneratedContent('Connect your OpenRouter API key in settings to use AI content generation.');
       setContentModal(true);
@@ -219,7 +220,7 @@ Also suggest 3 relevant keywords to include. Keep the whole response under 150 w
   };
 
   const generateReply = async (review: Review) => {
-    const key = process.env.EXPO_PUBLIC_OPENROUTER_KEY;
+    const key = process.env.EXPO_PUBLIC_OPENROUTER_API_KEY;
     if (!key || !company) {
       setReplyText('Thank you for your review! We appreciate your feedback and look forward to serving you again.');
       return;
@@ -238,7 +239,7 @@ Also suggest 3 relevant keywords to include. Keep the whole response under 150 w
             role: 'user',
             content: `Write a professional, warm response to this ${review.rating}-star Google review for ${company.name} (tree service company).
 
-Review from ${review.reviewer_name}: "${review.text ?? '(No text provided)'}"
+Review from ${review.reviewer_name}: "${review.body ?? '(No text provided)'}"
 
 Keep it under 50 words. Be genuine, thank them by name, and invite them back or address any concern. Don't be overly formal.`,
           }],
@@ -254,8 +255,37 @@ Keep it under 50 words. Be genuine, thank them by name, and invite them back or 
     }
   };
 
-  const claimedCitations = citations.filter(c => c.claimed).length;
-  const avgRating = gbp?.avg_rating ?? (reviews.length > 0 ? reviews.reduce((s, r) => s + r.rating, 0) / reviews.length : null);
+  const saveGbpConnection = async () => {
+    if (!company) return;
+    setGbpSaving(true);
+    await supabase
+      .from('gbp_profiles')
+      .upsert(
+        {
+          company_id: company.id,
+          name: company.name,
+          website: gbpUrl.trim() || null,
+          last_synced_at: new Date().toISOString(),
+        },
+        { onConflict: 'company_id' }
+      );
+    setGbpSaving(false);
+    setGbpSaveSuccess(true);
+    await fetchData();
+  };
+
+  const openGbpEdit = () => {
+    setGbpSaveSuccess(false);
+    setGbpUrl(gbp?.website ?? '');
+    setGbpConnectModal(true);
+  };
+
+  // Derived values
+  const gbpScore = gbp?.completeness_score ?? 0;
+  const hoursSet = !!gbp?.hours;
+  const photosCount = gbp?.photos?.length ?? 0;
+  const claimedCitations = citations.filter(c => c.status === 'claimed' || c.status === 'verified').length;
+  const avgRating = reviews.length > 0 ? reviews.reduce((s, r) => s + r.rating, 0) / reviews.length : null;
 
   return (
     <ScrollView
@@ -271,13 +301,13 @@ Keep it under 50 words. Be genuine, thank them by name, and invite them back or 
         <ActivityIndicator color={Colors.primary} />
       ) : gbp ? (
         <Card>
-          <GbpScoreGauge score={gbp.score} />
+          <GbpScoreGauge score={gbpScore} />
           <View style={styles.gbpDetails}>
             {[
               { label: 'Phone', value: gbp.phone, icon: '📞', ok: !!gbp.phone },
-              { label: 'Website', value: gbp.website, icon: '🌐', ok: !!gbp.website },
-              { label: 'Hours', value: gbp.hours_set ? 'Set' : 'Missing', icon: '🕐', ok: gbp.hours_set },
-              { label: 'Photos', value: `${gbp.photos_count}`, icon: '📷', ok: gbp.photos_count >= 5 },
+              { label: 'GBP URL', value: gbp.website ? 'Linked ✓' : 'Not set', icon: '🔗', ok: !!gbp.website },
+              { label: 'Hours', value: hoursSet ? 'Set' : 'Missing', icon: '🕐', ok: hoursSet },
+              { label: 'Photos', value: `${photosCount}`, icon: '📷', ok: photosCount >= 5 },
             ].map(item => (
               <View key={item.label} style={styles.gbpDetailRow}>
                 <Text style={styles.gbpDetailIcon}>{item.icon}</Text>
@@ -289,6 +319,9 @@ Keep it under 50 words. Be genuine, thank them by name, and invite them back or 
               </View>
             ))}
           </View>
+          <TouchableOpacity style={styles.editGbpBtn} onPress={openGbpEdit}>
+            <Text style={styles.editGbpBtnText}>⚙ Edit GBP connection</Text>
+          </TouchableOpacity>
         </Card>
       ) : (
         <EmptyState
@@ -296,7 +329,7 @@ Keep it under 50 words. Be genuine, thank them by name, and invite them back or 
           title="Connect your GBP"
           description="Connect your Google Business Profile to track your local SEO score and keyword rankings."
           actionLabel="Connect GBP"
-          onAction={() => {}}
+          onAction={() => { setGbpSaveSuccess(false); setGbpUrl(''); setGbpConnectModal(true); }}
         />
       )}
 
@@ -331,9 +364,8 @@ Keep it under 50 words. Be genuine, thank them by name, and invite them back or 
       ) : (
         <Card padding={false}>
           <View style={styles.kwHeader}>
-            <Text style={[styles.kwHeaderCell, { flex: 2 }]}>Keyword</Text>
+            <Text style={[styles.kwHeaderCell, { flex: 2, textAlign: 'left' }]}>Keyword</Text>
             <Text style={styles.kwHeaderCell}>Position</Text>
-            <Text style={styles.kwHeaderCell}>Volume</Text>
           </View>
           {keywords.map((kw, i) => (
             <View key={kw.id} style={[styles.kwRow, i < keywords.length - 1 && styles.kwBorder]}>
@@ -341,9 +373,6 @@ Keep it under 50 words. Be genuine, thank them by name, and invite them back or 
               <View style={{ flex: 1, alignItems: 'center' }}>
                 <PositionChange current={kw.position} previous={kw.previous_position} />
               </View>
-              <Text style={styles.kwVolume}>
-                {kw.search_volume != null ? kw.search_volume.toLocaleString() : '—'}
-              </Text>
             </View>
           ))}
         </Card>
@@ -370,9 +399,9 @@ Keep it under 50 words. Be genuine, thank them by name, and invite them back or 
                 </View>
                 <View style={styles.reviewRight}>
                   <Text style={styles.reviewDate}>
-                    {new Date(review.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                    {new Date(review.review_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
                   </Text>
-                  {review.replied ? (
+                  {review.responded_at != null ? (
                     <Badge label="Replied" variant="success" />
                   ) : (
                     <TouchableOpacity
@@ -384,7 +413,7 @@ Keep it under 50 words. Be genuine, thank them by name, and invite them back or 
                   )}
                 </View>
               </View>
-              {review.text && <Text style={styles.reviewText}>{review.text}</Text>}
+              {review.body && <Text style={styles.reviewText}>{review.body}</Text>}
             </Card>
           ))}
         </>
@@ -397,8 +426,8 @@ Keep it under 50 words. Be genuine, thank them by name, and invite them back or 
           <Card padding={false}>
             {citations.map((citation, i) => (
               <View key={citation.id} style={[styles.citRow, i < citations.length - 1 && styles.kwBorder]}>
-                <Text style={styles.citName}>{citation.directory}</Text>
-                {citation.claimed ? (
+                <Text style={styles.citName}>{citation.directory_name}</Text>
+                {citation.status === 'claimed' || citation.status === 'verified' ? (
                   <Badge label="Claimed" variant="success" />
                 ) : (
                   <Badge label="Unclaimed" variant="warning" />
@@ -422,6 +451,101 @@ Keep it under 50 words. Be genuine, thank them by name, and invite them back or 
           loading={generatingContent}
         />
       </Card>
+
+      {/* GBP Connect modal */}
+      <Modal
+        visible={gbpConnectModal}
+        animationType="slide"
+        presentationStyle="pageSheet"
+        onRequestClose={() => setGbpConnectModal(false)}
+      >
+        <KeyboardAvoidingView style={styles.replyModalContainer} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+          <View style={styles.contentModalHeader}>
+            <TouchableOpacity onPress={() => setGbpConnectModal(false)}>
+              <Text style={styles.contentModalClose}>Cancel</Text>
+            </TouchableOpacity>
+            <Text style={styles.contentModalTitle}>Connect Google Business</Text>
+            <View style={{ width: 60 }} />
+          </View>
+
+          <ScrollView contentContainerStyle={styles.gbpModalBody}>
+            {gbpSaveSuccess ? (
+              <View style={styles.gbpSuccessContainer}>
+                <Text style={styles.gbpSuccessIcon}>✅</Text>
+                <Text style={styles.gbpSuccessTitle}>GBP Connected!</Text>
+                <Text style={styles.gbpSuccessDesc}>
+                  Your Google Business Profile has been linked. Canopy will begin tracking your local SEO score and keyword rankings.
+                </Text>
+                <Button label="Done" onPress={() => setGbpConnectModal(false)} style={{ marginTop: 8 }} />
+              </View>
+            ) : (
+              <>
+                <View style={styles.gbpInfoBox}>
+                  <Text style={styles.gbpInfoTitle}>🔍 What this does</Text>
+                  <Text style={styles.gbpInfoText}>
+                    Connecting your Google Business Profile lets Canopy track your local SEO score, monitor keyword rankings, and pull in reviews so you can respond from one place.
+                  </Text>
+                </View>
+
+                <Text style={styles.gbpStepsTitle}>How to find your GBP URL</Text>
+
+                <View style={styles.gbpTipBox}>
+                  <Text style={styles.gbpTipTitle}>🔎 Easiest method</Text>
+                  <Text style={styles.gbpTipText}>
+                    On your phone or computer, open Google Maps and search for your business name. When your listing appears, tap it, then copy the URL from the address bar (it starts with maps.app.goo.gl or google.com/maps).
+                  </Text>
+                </View>
+
+                <View style={styles.gbpStep}>
+                  <View style={styles.gbpStepBadge}><Text style={styles.gbpStepNum}>1</Text></View>
+                  <View style={styles.gbpStepRight}>
+                    <Text style={styles.gbpStepText}>Open Google Maps on your phone or go to maps.google.com on a computer.</Text>
+                  </View>
+                </View>
+                <View style={styles.gbpStep}>
+                  <View style={styles.gbpStepBadge}><Text style={styles.gbpStepNum}>2</Text></View>
+                  <Text style={styles.gbpStepText}>Search for your business name and tap your listing when it appears.</Text>
+                </View>
+                <View style={styles.gbpStep}>
+                  <View style={styles.gbpStepBadge}><Text style={styles.gbpStepNum}>3</Text></View>
+                  <View style={styles.gbpStepRight}>
+                    <Text style={styles.gbpStepText}>Tap the Share button (📤) and copy the link — or copy the URL from your browser.</Text>
+                    <Text style={styles.gbpTipSmall}>The URL will start with: maps.app.goo.gl/... or google.com/maps/place/...</Text>
+                  </View>
+                </View>
+                <View style={styles.gbpStep}>
+                  <View style={styles.gbpStepBadge}><Text style={styles.gbpStepNum}>4</Text></View>
+                  <Text style={styles.gbpStepText}>Paste it below and tap Save.</Text>
+                </View>
+
+                <Text style={styles.fieldLabel}>Your Google Business Profile URL</Text>
+                <TextInput
+                  style={styles.gbpUrlInput}
+                  value={gbpUrl}
+                  onChangeText={setGbpUrl}
+                  placeholder="maps.app.goo.gl/... or google.com/maps/place/..."
+                  placeholderTextColor={Colors.textTertiary}
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                  keyboardType="url"
+                />
+
+                <Button
+                  label="Save & Connect"
+                  onPress={saveGbpConnection}
+                  loading={gbpSaving}
+                  style={{ marginTop: 8 }}
+                />
+                <Button
+                  label="Cancel"
+                  variant="secondary"
+                  onPress={() => setGbpConnectModal(false)}
+                />
+              </>
+            )}
+          </ScrollView>
+        </KeyboardAvoidingView>
+      </Modal>
 
       {/* Content modal */}
       <Modal visible={contentModal} animationType="slide" presentationStyle="pageSheet" onRequestClose={() => setContentModal(false)}>
@@ -474,7 +598,7 @@ Keep it under 50 words. Be genuine, thank them by name, and invite them back or 
               <View style={styles.originalReview}>
                 <Text style={styles.reviewerName}>{replyModal.reviewer_name}</Text>
                 <StarRating rating={replyModal.rating} />
-                {replyModal.text && <Text style={styles.reviewText}>{replyModal.text}</Text>}
+                {replyModal.body && <Text style={styles.reviewText}>{replyModal.body}</Text>}
               </View>
               <Text style={styles.fieldLabel}>Your reply</Text>
               {generatingReply ? (
@@ -527,7 +651,6 @@ const styles = StyleSheet.create({
   kwRow: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: Theme.space.lg, paddingVertical: 12 },
   kwBorder: { borderBottomWidth: 1, borderBottomColor: Colors.border },
   kwText: { fontSize: Theme.font.size.body, color: Colors.text },
-  kwVolume: { flex: 1, fontSize: Theme.font.size.body, color: Colors.textSecondary, textAlign: 'center' },
   reviewCard: { marginBottom: 0 },
   reviewHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: Theme.space.sm },
   reviewLeft: { gap: 2 },
@@ -575,4 +698,40 @@ const styles = StyleSheet.create({
     minHeight: 120, textAlignVertical: 'top',
   },
   redraftBtn: { alignSelf: 'flex-start' },
+  gbpModalBody: { padding: Theme.layout.screenPadding, gap: Theme.space.md, paddingBottom: 40 },
+  gbpInfoBox: {
+    backgroundColor: Colors.primary + '12',
+    borderRadius: Theme.radius.lg,
+    padding: Theme.space.lg,
+    gap: Theme.space.sm,
+  },
+  gbpInfoTitle: { fontSize: Theme.font.size.body, fontWeight: Theme.font.weight.semibold, color: Colors.text },
+  gbpInfoText: { fontSize: Theme.font.size.body, color: Colors.textSecondary, lineHeight: 22 },
+  gbpStepsTitle: { fontSize: Theme.font.size.subtitle, fontWeight: Theme.font.weight.semibold, color: Colors.text, marginTop: Theme.space.sm },
+  gbpStep: { flexDirection: 'row', gap: Theme.space.md, alignItems: 'flex-start' },
+  gbpStepBadge: {
+    width: 24, height: 24, borderRadius: 12,
+    backgroundColor: Colors.primary,
+    alignItems: 'center', justifyContent: 'center',
+    flexShrink: 0, marginTop: 1,
+  },
+  gbpStepNum: { fontSize: 12, fontWeight: Theme.font.weight.bold, color: Colors.textInverse },
+  gbpStepRight: { flex: 1, gap: 2 },
+  gbpStepText: { flex: 1, fontSize: Theme.font.size.body, color: Colors.textSecondary, lineHeight: 22 },
+  gbpStepUrl: { fontSize: Theme.font.size.small, color: Colors.primary, fontWeight: Theme.font.weight.medium },
+  gbpUrlInput: {
+    backgroundColor: Colors.surface, borderWidth: 1, borderColor: Colors.border,
+    borderRadius: Theme.radius.md, padding: Theme.space.md,
+    fontSize: Theme.font.size.body, color: Colors.text,
+  },
+  gbpSuccessContainer: { alignItems: 'center', gap: Theme.space.lg, paddingTop: 60 },
+  gbpSuccessIcon: { fontSize: 56 },
+  gbpSuccessTitle: { fontSize: Theme.font.size.headline, fontWeight: Theme.font.weight.bold, color: Colors.text },
+  gbpSuccessDesc: { fontSize: Theme.font.size.body, color: Colors.textSecondary, textAlign: 'center', lineHeight: 22, paddingHorizontal: Theme.space.xl },
+  editGbpBtn: { marginTop: Theme.space.md, paddingVertical: 10, borderTopWidth: 1, borderTopColor: Colors.border, alignItems: 'center' },
+  editGbpBtnText: { fontSize: Theme.font.size.small, color: Colors.textSecondary, fontWeight: Theme.font.weight.medium },
+  gbpTipBox: { backgroundColor: Colors.successBg, borderRadius: Theme.radius.lg, padding: Theme.space.lg, gap: 6, borderLeftWidth: 3, borderLeftColor: Colors.success },
+  gbpTipTitle: { fontSize: Theme.font.size.small, fontWeight: Theme.font.weight.bold, color: Colors.text },
+  gbpTipText: { fontSize: Theme.font.size.small, color: Colors.textSecondary, lineHeight: 20 },
+  gbpTipSmall: { fontSize: Theme.font.size.caption, color: Colors.textTertiary, marginTop: 2 },
 });

@@ -11,15 +11,15 @@ import {
   KeyboardAvoidingView,
   Platform,
   ActivityIndicator,
+  Linking,
 } from 'react-native';
 import { Colors } from '@/constants/Colors';
 import { Theme } from '@/constants/Theme';
 import { Badge } from '@/components/ui/Badge';
-import { Card } from '@/components/ui/Card';
-import { Button } from '@/components/ui/Button';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { useAuthStore } from '@/lib/stores/authStore';
 import { supabase } from '@/lib/supabase';
+import { scoreAndSuggestFollowUp, isAIConfigured, aiChat } from '@/lib/ai';
 
 type LeadStatus = 'new' | 'contacted' | 'quoted' | 'booked' | 'lost';
 
@@ -44,6 +44,14 @@ const PIPELINE_STAGES: { key: LeadStatus; label: string; color: string }[] = [
   { key: 'booked', label: 'Booked', color: Colors.statusComplete },
 ];
 
+const ALL_STATUSES: { key: LeadStatus; label: string; emoji: string }[] = [
+  { key: 'new', label: 'New', emoji: '🆕' },
+  { key: 'contacted', label: 'Contacted', emoji: '📞' },
+  { key: 'quoted', label: 'Quoted', emoji: '📋' },
+  { key: 'booked', label: 'Booked', emoji: '✅' },
+  { key: 'lost', label: 'Lost', emoji: '❌' },
+];
+
 const SOURCE_COLORS: Record<string, 'success' | 'info' | 'warning' | 'neutral'> = {
   google_ads: 'success',
   facebook_ads: 'info',
@@ -61,12 +69,168 @@ function timeAgo(dateStr: string): string {
   return `${Math.floor(hrs / 24)}d ago`;
 }
 
-function LeadCard({ lead, onStatusChange }: { lead: Lead; onStatusChange: (id: string, status: LeadStatus) => void }) {
-  const [menuOpen, setMenuOpen] = useState(false);
-  const nextStatuses: LeadStatus[] = ['new', 'contacted', 'quoted', 'booked', 'lost'];
+// ─── Lead Detail Modal ────────────────────────────────────────────────────────
+
+function LeadDetailModal({
+  lead,
+  visible,
+  onClose,
+  onStatusChange,
+  onScore,
+  scoringId,
+  onReviewRequest,
+}: {
+  lead: Lead | null;
+  visible: boolean;
+  onClose: () => void;
+  onStatusChange: (id: string, status: LeadStatus) => void;
+  onScore: (lead: Lead) => void;
+  scoringId: string | null;
+  onReviewRequest: (lead: Lead) => void;
+}) {
+  if (!lead) return null;
+  const isScoring = scoringId === lead.id;
 
   return (
-    <TouchableOpacity style={styles.leadCard} onPress={() => setMenuOpen(true)} activeOpacity={0.85}>
+    <Modal visible={visible} animationType="slide" presentationStyle="pageSheet" onRequestClose={onClose}>
+      <View style={detailStyles.container}>
+        {/* Header */}
+        <View style={detailStyles.header}>
+          <TouchableOpacity onPress={onClose} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+            <Text style={detailStyles.closeBtn}>Done</Text>
+          </TouchableOpacity>
+          <Text style={detailStyles.headerTitle}>Lead Detail</Text>
+          <View style={{ width: 44 }} />
+        </View>
+
+        <ScrollView style={detailStyles.scroll} contentContainerStyle={detailStyles.content}>
+          {/* Score + Name */}
+          <View style={detailStyles.nameRow}>
+            <View style={detailStyles.scoreBubble}>
+              <Text style={detailStyles.scoreBubbleText}>{lead.score}</Text>
+              <Text style={detailStyles.scoreBubbleLabel}>score</Text>
+            </View>
+            <View style={detailStyles.nameBlock}>
+              <Text style={detailStyles.leadName}>{lead.name}</Text>
+              <Text style={detailStyles.leadService}>{lead.service || 'Tree service'}</Text>
+              <Text style={detailStyles.leadTime}>{timeAgo(lead.created_at)}</Text>
+            </View>
+            <Badge
+              label={lead.source.replace(/_/g, ' ')}
+              variant={SOURCE_COLORS[lead.source] ?? 'neutral'}
+            />
+          </View>
+
+          {/* Contact info */}
+          <View style={detailStyles.section}>
+            <Text style={detailStyles.sectionTitle}>Contact</Text>
+            {lead.phone ? (
+              <TouchableOpacity
+                style={detailStyles.contactRow}
+                onPress={() => Linking.openURL(`tel:${lead.phone}`)}
+              >
+                <Text style={detailStyles.contactIcon}>📞</Text>
+                <Text style={detailStyles.contactValue}>{lead.phone}</Text>
+                <Text style={detailStyles.contactAction}>Call →</Text>
+              </TouchableOpacity>
+            ) : (
+              <Text style={detailStyles.contactNone}>No phone on file</Text>
+            )}
+            {lead.email ? (
+              <TouchableOpacity
+                style={detailStyles.contactRow}
+                onPress={() => Linking.openURL(`mailto:${lead.email}`)}
+              >
+                <Text style={detailStyles.contactIcon}>✉️</Text>
+                <Text style={detailStyles.contactValue}>{lead.email}</Text>
+                <Text style={detailStyles.contactAction}>Email →</Text>
+              </TouchableOpacity>
+            ) : null}
+          </View>
+
+          {/* Notes */}
+          {lead.notes ? (
+            <View style={detailStyles.section}>
+              <Text style={detailStyles.sectionTitle}>Notes</Text>
+              <Text style={detailStyles.notesText}>{lead.notes}</Text>
+            </View>
+          ) : null}
+
+          {/* Status pipeline */}
+          <View style={detailStyles.section}>
+            <Text style={detailStyles.sectionTitle}>Pipeline Stage</Text>
+            <View style={detailStyles.statusGrid}>
+              {ALL_STATUSES.map(s => (
+                <TouchableOpacity
+                  key={s.key}
+                  style={[
+                    detailStyles.statusBtn,
+                    lead.status === s.key && detailStyles.statusBtnActive,
+                  ]}
+                  onPress={() => onStatusChange(lead.id, s.key)}
+                >
+                  <Text style={detailStyles.statusBtnEmoji}>{s.emoji}</Text>
+                  <Text
+                    style={[
+                      detailStyles.statusBtnText,
+                      lead.status === s.key && detailStyles.statusBtnTextActive,
+                    ]}
+                  >
+                    {s.label}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          </View>
+
+          {/* AI actions */}
+          {isAIConfigured() && (
+            <View style={detailStyles.section}>
+              <Text style={detailStyles.sectionTitle}>AI Tools</Text>
+              <View style={detailStyles.aiActions}>
+                <TouchableOpacity
+                  style={[detailStyles.aiBtn, isScoring && detailStyles.aiBtnDisabled]}
+                  onPress={() => onScore(lead)}
+                  disabled={isScoring}
+                >
+                  {isScoring ? (
+                    <ActivityIndicator size="small" color={Colors.primary} />
+                  ) : (
+                    <Text style={detailStyles.aiBtnText}>🤖 Score & Follow-up</Text>
+                  )}
+                </TouchableOpacity>
+                {lead.status === 'booked' && (
+                  <TouchableOpacity
+                    style={detailStyles.aiBtn}
+                    onPress={() => onReviewRequest(lead)}
+                  >
+                    <Text style={detailStyles.aiBtnText}>🌟 Generate Review Request</Text>
+                  </TouchableOpacity>
+                )}
+              </View>
+            </View>
+          )}
+        </ScrollView>
+      </View>
+    </Modal>
+  );
+}
+
+// ─── Lead Card ────────────────────────────────────────────────────────────────
+
+function LeadCard({
+  lead,
+  onOpen,
+  scoringId,
+}: {
+  lead: Lead;
+  onOpen: (lead: Lead) => void;
+  scoringId: string | null;
+}) {
+  const isScoring = scoringId === lead.id;
+
+  return (
+    <TouchableOpacity style={styles.leadCard} onPress={() => onOpen(lead)} activeOpacity={0.85}>
       <View style={styles.leadCardHeader}>
         <View style={styles.leadCardLeft}>
           <View style={[styles.scoreCircle, { backgroundColor: Colors.primary + '22' }]}>
@@ -84,31 +248,20 @@ function LeadCard({ lead, onStatusChange }: { lead: Lead; onStatusChange: (id: s
       </View>
       <View style={styles.leadCardFooter}>
         {lead.phone && <Text style={styles.leadPhone}>📞 {lead.phone}</Text>}
-        <Text style={styles.leadTime}>{timeAgo(lead.created_at)}</Text>
+        <View style={styles.leadFooterRight}>
+          <Text style={styles.leadTime}>{timeAgo(lead.created_at)}</Text>
+          {isScoring && (
+            <ActivityIndicator size="small" color={Colors.primary} style={styles.aiSpinner} />
+          )}
+          <View style={[styles.statusPip, { backgroundColor: PIPELINE_STAGES.find(s => s.key === lead.status)?.color ?? Colors.textTertiary }]} />
+          <Text style={styles.statusLabel}>{lead.status}</Text>
+        </View>
       </View>
-
-      <Modal visible={menuOpen} transparent animationType="fade" onRequestClose={() => setMenuOpen(false)}>
-        <TouchableOpacity style={styles.overlay} onPress={() => setMenuOpen(false)} activeOpacity={1}>
-          <View style={styles.statusMenu}>
-            <Text style={styles.statusMenuTitle}>Move to stage</Text>
-            {nextStatuses.map(s => (
-              <TouchableOpacity
-                key={s}
-                style={[styles.statusOption, lead.status === s && styles.statusOptionActive]}
-                onPress={() => { onStatusChange(lead.id, s); setMenuOpen(false); }}
-              >
-                <Text style={[styles.statusOptionText, lead.status === s && styles.statusOptionTextActive]}>
-                  {s.charAt(0).toUpperCase() + s.slice(1)}
-                  {lead.status === s ? ' ✓' : ''}
-                </Text>
-              </TouchableOpacity>
-            ))}
-          </View>
-        </TouchableOpacity>
-      </Modal>
     </TouchableOpacity>
   );
 }
+
+// ─── Add Lead Form ─────────────────────────────────────────────────────────────
 
 interface AddLeadForm {
   name: string;
@@ -119,17 +272,30 @@ interface AddLeadForm {
   notes: string;
 }
 
+// ─── Main Screen ──────────────────────────────────────────────────────────────
+
 export default function LeadsScreen() {
   const { company } = useAuthStore();
   const [leads, setLeads] = useState<Lead[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [activeStage, setActiveStage] = useState<LeadStatus | 'all'>('all');
+
+  // Add lead modal
   const [showAdd, setShowAdd] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [form, setForm] = useState<AddLeadForm>({
     name: '', phone: '', email: '', service: '', source: 'phone', notes: '',
   });
+
+  // Lead detail modal
+  const [selectedLead, setSelectedLead] = useState<Lead | null>(null);
+  const [showDetail, setShowDetail] = useState(false);
+
+  // AI state
+  const [aiResult, setAiResult] = useState<{ leadId: string; score: number; followUpMessage: string } | null>(null);
+  const [scoringId, setScoringId] = useState<string | null>(null);
+  const [reviewRequest, setReviewRequest] = useState<{ leadId: string; leadName: string; message: string } | null>(null);
 
   const fetchLeads = useCallback(async () => {
     if (!company) return;
@@ -151,9 +317,67 @@ export default function LeadsScreen() {
     fetchLeads().finally(() => setLoading(false));
   }, [fetchLeads]);
 
+  // Realtime subscription for new leads
+  useEffect(() => {
+    if (!company) return;
+    const channel = supabase
+      .channel('leads-realtime')
+      .on(
+        'postgres_changes',
+        { event: 'INSERT', schema: 'public', table: 'leads', filter: `company_id=eq.${company.id}` },
+        (payload) => {
+          setLeads(prev => [payload.new as Lead, ...prev]);
+        }
+      )
+      .subscribe();
+    return () => { supabase.removeChannel(channel); };
+  }, [company]);
+
+  const generateReviewRequest = async (lead: Lead) => {
+    try {
+      const msg = await aiChat([
+        {
+          role: 'system',
+          content: `You write short, friendly SMS review request messages for tree service companies. Under 160 characters. Include the Google review link placeholder [LINK].`,
+        },
+        {
+          role: 'user',
+          content: `Write a review request SMS for ${lead.name} from ${company!.name} in ${company!.city ?? 'their area'}. They just got ${lead.service ?? 'tree service'} done. Keep it natural, not salesy.`,
+        },
+      ], { model: 'fast', maxTokens: 80 });
+      setReviewRequest({ leadId: lead.id, leadName: lead.name, message: msg });
+    } catch {}
+  };
+
   const handleStatusChange = async (id: string, status: LeadStatus) => {
     setLeads(prev => prev.map(l => l.id === id ? { ...l, status } : l));
+    // Keep selected lead in sync
+    setSelectedLead(prev => prev?.id === id ? { ...prev, status } : prev);
     await supabase.from('leads').update({ status }).eq('id', id);
+
+    // When booked, generate review request
+    if (status === 'booked' && isAIConfigured()) {
+      const lead = leads.find(l => l.id === id);
+      if (lead && company) {
+        generateReviewRequest(lead);
+      }
+    }
+  };
+
+  const handleScoreLead = async (lead: Lead) => {
+    if (!isAIConfigured() || !company) return;
+    setScoringId(lead.id);
+    try {
+      const result = await scoreAndSuggestFollowUp(
+        { name: company.name, city: company.city ?? undefined, services: company.services_offered },
+        { name: lead.name, service: lead.service, notes: lead.notes ?? undefined, source: lead.source, createdAt: lead.created_at }
+      );
+      await supabase.from('leads').update({ score: result.score }).eq('id', lead.id);
+      setLeads(prev => prev.map(l => l.id === lead.id ? { ...l, score: result.score } : l));
+      setSelectedLead(prev => prev?.id === lead.id ? { ...prev, score: result.score } : prev);
+      setAiResult({ leadId: lead.id, score: result.score, followUpMessage: result.followUpMessage });
+    } catch {}
+    setScoringId(null);
   };
 
   const handleAddLead = async () => {
@@ -182,15 +406,25 @@ export default function LeadsScreen() {
     }
   };
 
-  const filteredLeads = activeStage === 'all' ? leads : leads.filter(l => l.status === activeStage);
+  const handleOpenDetail = (lead: Lead) => {
+    setSelectedLead(lead);
+    setShowDetail(true);
+  };
 
+  const filteredLeads = activeStage === 'all' ? leads : leads.filter(l => l.status === activeStage);
   const countFor = (stage: LeadStatus) => leads.filter(l => l.status === stage).length;
 
   return (
     <View style={styles.container}>
       {/* Header */}
       <View style={styles.header}>
-        <Text style={styles.headerTitle}>Lead Inbox</Text>
+        <View style={styles.headerLeft}>
+          <Text style={styles.headerTitle}>Lead Inbox</Text>
+          <View style={styles.liveBadge}>
+            <View style={styles.liveDot} />
+            <Text style={styles.liveText}>Live</Text>
+          </View>
+        </View>
         <TouchableOpacity style={styles.addBtn} onPress={() => setShowAdd(true)}>
           <Text style={styles.addBtnText}>+ Add</Text>
         </TouchableOpacity>
@@ -245,7 +479,12 @@ export default function LeadsScreen() {
             />
           ) : (
             filteredLeads.map(lead => (
-              <LeadCard key={lead.id} lead={lead} onStatusChange={handleStatusChange} />
+              <LeadCard
+                key={lead.id}
+                lead={lead}
+                onOpen={handleOpenDetail}
+                scoringId={scoringId}
+              />
             ))
           )}
         </ScrollView>
@@ -255,6 +494,61 @@ export default function LeadsScreen() {
       <TouchableOpacity style={styles.fab} onPress={() => setShowAdd(true)}>
         <Text style={styles.fabText}>+</Text>
       </TouchableOpacity>
+
+      {/* Lead Detail Modal */}
+      <LeadDetailModal
+        lead={selectedLead}
+        visible={showDetail}
+        onClose={() => { setShowDetail(false); setSelectedLead(null); }}
+        onStatusChange={handleStatusChange}
+        onScore={handleScoreLead}
+        scoringId={scoringId}
+        onReviewRequest={generateReviewRequest}
+      />
+
+      {/* AI Follow-up Message Banner */}
+      {aiResult && (
+        <Modal visible transparent animationType="slide" onRequestClose={() => setAiResult(null)}>
+          <TouchableOpacity style={styles.aiOverlay} onPress={() => setAiResult(null)} activeOpacity={1}>
+            <TouchableOpacity style={styles.aiBanner} activeOpacity={1} onPress={() => {}}>
+              <View style={styles.aiBannerHeader}>
+                <Text style={styles.aiBannerTitle}>💬 Follow-up message</Text>
+                <Text style={styles.aiBannerScore}>Score: {aiResult.score}/10</Text>
+                <TouchableOpacity onPress={() => setAiResult(null)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                  <Text style={styles.aiBannerClose}>✕</Text>
+                </TouchableOpacity>
+              </View>
+              <Text style={styles.aiBannerMessage} selectable>
+                {aiResult.followUpMessage}
+              </Text>
+              <Text style={styles.aiBannerHint}>Hold to select and copy the message above.</Text>
+            </TouchableOpacity>
+          </TouchableOpacity>
+        </Modal>
+      )}
+
+      {/* Review Request Modal */}
+      {reviewRequest && (
+        <Modal visible transparent animationType="slide" onRequestClose={() => setReviewRequest(null)}>
+          <TouchableOpacity style={styles.aiOverlay} onPress={() => setReviewRequest(null)} activeOpacity={1}>
+            <TouchableOpacity style={styles.aiBanner} activeOpacity={1} onPress={() => {}}>
+              <View style={styles.aiBannerHeader}>
+                <Text style={styles.aiBannerTitle}>🌟 Request a review from {reviewRequest.leadName}</Text>
+                <TouchableOpacity onPress={() => setReviewRequest(null)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                  <Text style={styles.aiBannerClose}>✕</Text>
+                </TouchableOpacity>
+              </View>
+              <Text style={styles.aiBannerMessage} selectable>
+                {reviewRequest.message}
+              </Text>
+              <Text style={styles.reviewRequestHint}>Replace [LINK] with your Google review link</Text>
+              <TouchableOpacity style={styles.dismissBtn} onPress={() => setReviewRequest(null)}>
+                <Text style={styles.dismissBtnText}>Dismiss</Text>
+              </TouchableOpacity>
+            </TouchableOpacity>
+          </TouchableOpacity>
+        </Modal>
+      )}
 
       {/* Add Lead Modal */}
       <Modal visible={showAdd} animationType="slide" presentationStyle="pageSheet" onRequestClose={() => setShowAdd(false)}>
@@ -340,6 +634,97 @@ export default function LeadsScreen() {
   );
 }
 
+// ─── Lead Detail Styles ───────────────────────────────────────────────────────
+
+const detailStyles = StyleSheet.create({
+  container: { flex: 1, backgroundColor: Colors.background },
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: Theme.layout.screenPadding,
+    paddingTop: Theme.space.xl,
+    paddingBottom: Theme.space.md,
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.border,
+    backgroundColor: Colors.surface,
+  },
+  headerTitle: { fontSize: Theme.font.size.subtitle, fontWeight: Theme.font.weight.semibold, color: Colors.text },
+  closeBtn: { fontSize: Theme.font.size.body, color: Colors.primary, fontWeight: Theme.font.weight.semibold },
+  scroll: { flex: 1 },
+  content: { padding: Theme.layout.screenPadding, gap: Theme.space.lg, paddingBottom: 40 },
+  nameRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: Theme.space.md,
+    backgroundColor: Colors.surface,
+    borderRadius: Theme.radius.xl,
+    padding: Theme.space.lg,
+    ...Theme.shadow.sm,
+  },
+  scoreBubble: {
+    width: 52,
+    height: 52,
+    borderRadius: 26,
+    backgroundColor: Colors.primary + '18',
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexShrink: 0,
+  },
+  scoreBubbleText: { fontSize: 20, fontWeight: Theme.font.weight.bold, color: Colors.primary, lineHeight: 24 },
+  scoreBubbleLabel: { fontSize: 9, color: Colors.primary, fontWeight: Theme.font.weight.semibold, textTransform: 'uppercase' },
+  nameBlock: { flex: 1 },
+  leadName: { fontSize: Theme.font.size.subtitle, fontWeight: Theme.font.weight.bold, color: Colors.text },
+  leadService: { fontSize: Theme.font.size.body, color: Colors.textSecondary, marginTop: 2 },
+  leadTime: { fontSize: Theme.font.size.caption, color: Colors.textTertiary, marginTop: 4 },
+  section: {
+    backgroundColor: Colors.surface,
+    borderRadius: Theme.radius.xl,
+    padding: Theme.space.lg,
+    gap: Theme.space.sm,
+    ...Theme.shadow.sm,
+  },
+  sectionTitle: { fontSize: Theme.font.size.small, fontWeight: Theme.font.weight.semibold, color: Colors.textTertiary, textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 4 },
+  contactRow: { flexDirection: 'row', alignItems: 'center', gap: Theme.space.sm, paddingVertical: 6 },
+  contactIcon: { fontSize: 18, width: 28 },
+  contactValue: { flex: 1, fontSize: Theme.font.size.body, color: Colors.text },
+  contactAction: { fontSize: Theme.font.size.small, color: Colors.primary, fontWeight: Theme.font.weight.semibold },
+  contactNone: { fontSize: Theme.font.size.body, color: Colors.textTertiary, fontStyle: 'italic' },
+  notesText: { fontSize: Theme.font.size.body, color: Colors.textSecondary, lineHeight: 22 },
+  statusGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  statusBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderRadius: Theme.radius.full,
+    borderWidth: 1.5,
+    borderColor: Colors.border,
+    backgroundColor: Colors.background,
+  },
+  statusBtnActive: { borderColor: Colors.primary, backgroundColor: Colors.primary + '12' },
+  statusBtnEmoji: { fontSize: 14 },
+  statusBtnText: { fontSize: Theme.font.size.small, color: Colors.textSecondary, fontWeight: Theme.font.weight.medium },
+  statusBtnTextActive: { color: Colors.primary, fontWeight: Theme.font.weight.bold },
+  aiActions: { gap: Theme.space.sm },
+  aiBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    paddingVertical: 12,
+    borderRadius: Theme.radius.md,
+    backgroundColor: Colors.primary + '12',
+    borderWidth: 1,
+    borderColor: Colors.primary + '30',
+  },
+  aiBtnDisabled: { opacity: 0.5 },
+  aiBtnText: { fontSize: Theme.font.size.body, color: Colors.primary, fontWeight: Theme.font.weight.semibold },
+});
+
+// ─── Main Screen Styles ───────────────────────────────────────────────────────
+
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: Colors.background },
   header: {
@@ -353,7 +738,29 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: Colors.border,
   },
+  headerLeft: { flexDirection: 'row', alignItems: 'center', gap: Theme.space.sm },
   headerTitle: { fontSize: Theme.font.size.headline, fontWeight: Theme.font.weight.bold, color: Colors.text },
+  liveBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: '#16a34a18',
+    borderRadius: Theme.radius.full,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+  },
+  liveDot: {
+    width: 7,
+    height: 7,
+    borderRadius: 4,
+    backgroundColor: '#16a34a',
+  },
+  liveText: {
+    fontSize: 11,
+    fontWeight: Theme.font.weight.semibold,
+    color: '#16a34a',
+    letterSpacing: 0.3,
+  },
   addBtn: { backgroundColor: Colors.primary, paddingHorizontal: Theme.space.lg, paddingVertical: Theme.space.sm, borderRadius: Theme.radius.md },
   addBtnText: { color: Colors.textInverse, fontWeight: Theme.font.weight.semibold, fontSize: Theme.font.size.body },
   stageScroll: { backgroundColor: Colors.surface, borderBottomWidth: 1, borderBottomColor: Colors.border },
@@ -386,20 +793,10 @@ const styles = StyleSheet.create({
   leadCardFooter: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 2 },
   leadPhone: { fontSize: Theme.font.size.small, color: Colors.textSecondary },
   leadTime: { fontSize: Theme.font.size.caption, color: Colors.textTertiary },
-  overlay: { flex: 1, backgroundColor: Colors.overlay, justifyContent: 'center', alignItems: 'center' },
-  statusMenu: {
-    backgroundColor: Colors.surface,
-    borderRadius: Theme.radius.xl,
-    padding: Theme.space.lg,
-    width: 260,
-    gap: 4,
-    ...Theme.shadow.lg,
-  },
-  statusMenuTitle: { fontSize: Theme.font.size.small, color: Colors.textTertiary, fontWeight: Theme.font.weight.semibold, textTransform: 'uppercase', marginBottom: Theme.space.sm },
-  statusOption: { paddingVertical: 12, paddingHorizontal: Theme.space.md, borderRadius: Theme.radius.md },
-  statusOptionActive: { backgroundColor: Colors.primary + '15' },
-  statusOptionText: { fontSize: Theme.font.size.body, color: Colors.text },
-  statusOptionTextActive: { color: Colors.primary, fontWeight: Theme.font.weight.semibold },
+  leadFooterRight: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  aiSpinner: { width: 16, height: 16 },
+  statusPip: { width: 8, height: 8, borderRadius: 4 },
+  statusLabel: { fontSize: Theme.font.size.caption, color: Colors.textTertiary, textTransform: 'capitalize' },
   fab: {
     position: 'absolute', bottom: 24, right: 24,
     width: 56, height: 56, borderRadius: 28,
@@ -408,6 +805,49 @@ const styles = StyleSheet.create({
     ...Theme.shadow.lg,
   },
   fabText: { fontSize: 28, color: Colors.textInverse, lineHeight: 32 },
+  aiOverlay: { flex: 1, backgroundColor: Colors.overlay, justifyContent: 'flex-end' },
+  aiBanner: {
+    backgroundColor: Colors.surface,
+    borderTopLeftRadius: Theme.radius.xl,
+    borderTopRightRadius: Theme.radius.xl,
+    padding: Theme.space.xl,
+    gap: Theme.space.md,
+    paddingBottom: 40,
+    ...Theme.shadow.lg,
+  },
+  aiBannerHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  aiBannerTitle: { fontSize: Theme.font.size.subtitle, fontWeight: Theme.font.weight.semibold, color: Colors.text, flex: 1 },
+  aiBannerScore: { fontSize: Theme.font.size.small, color: Colors.primary, fontWeight: Theme.font.weight.semibold, marginRight: Theme.space.md },
+  aiBannerClose: { fontSize: Theme.font.size.body, color: Colors.textTertiary, fontWeight: Theme.font.weight.medium },
+  aiBannerMessage: {
+    fontSize: Theme.font.size.body,
+    color: Colors.text,
+    lineHeight: 22,
+    backgroundColor: Colors.background,
+    borderRadius: Theme.radius.md,
+    padding: Theme.space.md,
+  },
+  aiBannerHint: { fontSize: Theme.font.size.caption, color: Colors.textTertiary, textAlign: 'center' },
+  reviewRequestHint: {
+    fontSize: Theme.font.size.caption,
+    color: Colors.textSecondary,
+    textAlign: 'center',
+    fontStyle: 'italic',
+  },
+  dismissBtn: {
+    alignSelf: 'center',
+    paddingHorizontal: Theme.space.xl,
+    paddingVertical: Theme.space.sm,
+    borderRadius: Theme.radius.md,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    marginTop: Theme.space.xs,
+  },
+  dismissBtnText: {
+    fontSize: Theme.font.size.body,
+    color: Colors.textSecondary,
+    fontWeight: Theme.font.weight.medium,
+  },
   modalContainer: { flex: 1, backgroundColor: Colors.background },
   modalHeader: {
     flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',

@@ -11,12 +11,12 @@ export default function ConnectTikTokStep() {
 
   const handleConnect = async () => {
     // OAuth flow will be completed in production. For now advance to next step.
-    await updateOnboardingStep(6);
+    try { await updateOnboardingStep(6); } catch {}
     router.push('/(onboarding)/google-ads-script');
   };
 
   const handleSkip = async () => {
-    await updateOnboardingStep(6);
+    try { await updateOnboardingStep(6); } catch {}
     router.push('/(onboarding)/google-ads-script');
   };
 

@@ -10,13 +10,12 @@ export default function ConnectFacebookStep() {
   const { updateOnboardingStep } = useAuthStore();
 
   const handleConnect = async () => {
-    // OAuth flow will be completed in production. For now advance to next step.
-    await updateOnboardingStep(5);
+    try { await updateOnboardingStep(5); } catch {}
     router.push('/(onboarding)/connect-tiktok');
   };
 
   const handleSkip = async () => {
-    await updateOnboardingStep(5);
+    try { await updateOnboardingStep(5); } catch {}
     router.push('/(onboarding)/connect-tiktok');
   };
 

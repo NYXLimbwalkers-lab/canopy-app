@@ -310,6 +310,25 @@ CREATE TABLE company_settings (
 );
 
 -- ============================================================================
+-- GENERATED VIDEOS (AI-created short-form content)
+-- ============================================================================
+CREATE TABLE generated_videos (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  company_id UUID NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+  script TEXT NOT NULL,
+  video_type TEXT NOT NULL,
+  status TEXT DEFAULT 'processing' CHECK (status IN ('processing', 'ready', 'failed')),
+  video_url TEXT,
+  thumbnail_url TEXT,
+  duration_seconds INT,
+  creatomate_render_id TEXT,
+  error_message TEXT,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX idx_generated_videos_company ON generated_videos(company_id);
+
+-- ============================================================================
 -- WEATHER / INTELLIGENCE
 -- ============================================================================
 CREATE TABLE weather_events (
@@ -347,6 +366,7 @@ ALTER TABLE keyword_rankings ENABLE ROW LEVEL SECURITY;
 ALTER TABLE citations ENABLE ROW LEVEL SECURITY;
 ALTER TABLE company_settings ENABLE ROW LEVEL SECURITY;
 ALTER TABLE weather_events ENABLE ROW LEVEL SECURITY;
+ALTER TABLE generated_videos ENABLE ROW LEVEL SECURITY;
 
 -- Helper function: get current user's company_id
 CREATE OR REPLACE FUNCTION get_my_company_id()
@@ -422,6 +442,10 @@ CREATE POLICY "company_settings_isolation" ON company_settings
 CREATE POLICY "weather_events_company_isolation" ON weather_events
   FOR ALL USING (company_id = get_my_company_id());
 
+-- Generated videos
+CREATE POLICY "generated_videos_company_isolation" ON generated_videos
+  FOR ALL USING (company_id = get_my_company_id());
+
 -- ============================================================================
 -- SIGNUP TRIGGER: auto-create company + user record on auth signup
 -- ============================================================================
@@ -437,9 +461,9 @@ BEGIN
     split_part(NEW.email, '@', 1) || ' Tree Service'
   );
 
-  -- Create the company record
-  INSERT INTO companies (name, onboarding_step)
-  VALUES (company_name, 1)
+  -- Create the company record with 7-day trial
+  INSERT INTO public.companies (name, onboarding_step, plan, subscription_status, trial_ends_at)
+  VALUES (company_name, 1, 'trial', 'trialing', NOW() + INTERVAL '7 days')
   RETURNING id INTO new_company_id;
 
   -- Create default settings for the company
@@ -458,7 +482,7 @@ BEGIN
 
   RETURN NEW;
 END;
-$$ LANGUAGE plpgsql SECURITY DEFINER;
+$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
 
 -- Drop trigger if exists and recreate
 DROP TRIGGER IF EXISTS on_auth_user_created ON auth.users;

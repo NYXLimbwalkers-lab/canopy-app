@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useState, useCallback, useRef } from 'react';
 import {
   View,
   Text,
@@ -8,24 +8,36 @@ import {
   Modal,
   ActivityIndicator,
   RefreshControl,
+  Linking,
+  Share,
 } from 'react-native';
-import { Colors } from '@/constants/Colors';
 import { Theme } from '@/constants/Theme';
 import { Badge } from '@/components/ui/Badge';
-import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
-import { EmptyState } from '@/components/ui/EmptyState';
 import { useAuthStore } from '@/lib/stores/authStore';
 import { supabase } from '@/lib/supabase';
 
+// ─── Dark palette (not from Colors — this tab has its own rich dark theme) ───
+const D = {
+  bg:         '#0A0F0D',
+  surface:    '#111B16',
+  surfaceAlt: '#1A2820',
+  border:     '#2D3F35',
+  text:       '#F9FAFB',
+  textSec:    '#9CA3AF',
+  green:      '#40916C',
+  gold:       '#F4A261',
+  purple:     '#7C3AED',
+};
+
+// ─── Types ────────────────────────────────────────────────────────────────────
 interface ContentPost {
   id: string;
-  title: string;
-  type: string;
+  video_type: string | null;
   platform: string;
   scheduled_at: string | null;
   published_at: string | null;
-  status: 'draft' | 'scheduled' | 'published';
+  status: 'draft' | 'scheduled' | 'posted' | 'failed';
   script: string | null;
 }
 
@@ -35,44 +47,93 @@ interface SocialConnection {
   handle: string | null;
 }
 
+interface GeneratedVideo {
+  id: string;
+  status: 'processing' | 'ready' | 'failed';
+  video_url: string | null;
+  thumbnail_url: string | null;
+  error_message: string | null;
+}
+
+// ─── Constants ────────────────────────────────────────────────────────────────
 const VIDEO_TYPES = [
-  { key: 'satisfying_removal', emoji: '🌳', label: 'Satisfying removal' },
-  { key: 'before_after', emoji: '✨', label: 'Before & after' },
-  { key: 'did_you_know', emoji: '🧠', label: 'Did you know' },
-  { key: 'day_in_life', emoji: '📸', label: 'Day in the life' },
-  { key: 'price_transparency', emoji: '💰', label: 'Price transparency' },
-  { key: 'storm_damage', emoji: '⚡', label: 'Storm damage' },
+  { key: 'satisfying_removal', emoji: '🌳', label: 'Satisfying Removal',  viralScore: 9.4 },
+  { key: 'before_after',       emoji: '✨', label: 'Before & After',       viralScore: 8.8 },
+  { key: 'did_you_know',       emoji: '🧠', label: 'Did You Know',         viralScore: 7.9 },
+  { key: 'day_in_life',        emoji: '📸', label: 'Day in the Life',      viralScore: 8.2 },
+  { key: 'price_transparency', emoji: '💰', label: 'Price Transparency',   viralScore: 9.1 },
+  { key: 'storm_damage',       emoji: '⚡', label: 'Storm Damage',         viralScore: 9.6 },
 ];
 
 const SOCIAL_PLATFORMS = [
-  { key: 'tiktok', emoji: '🎵', label: 'TikTok' },
-  { key: 'youtube', emoji: '▶️', label: 'YouTube' },
-  { key: 'instagram', emoji: '📷', label: 'Instagram' },
+  {
+    key:       'tiktok',
+    emoji:     '♪',
+    label:     'TikTok',
+    cardBg:    '#000000',
+    cardBorder:'#2A2A2A',
+    textColor: '#FFFFFF',
+    tagline:   'Short-form viral video',
+  },
+  {
+    key:       'instagram',
+    emoji:     '◈',
+    label:     'Instagram',
+    cardBg:    '#1A0A2E',
+    cardBorder:'#833AB4',
+    textColor: '#E879F9',
+    tagline:   'Reels & Stories',
+  },
+  {
+    key:       'youtube',
+    emoji:     '▶',
+    label:     'YouTube',
+    cardBg:    '#1A0000',
+    cardBorder:'#FF0000',
+    textColor: '#FF4444',
+    tagline:   'Long-form & Shorts',
+  },
 ];
+
+// ─── Calendar helpers ─────────────────────────────────────────────────────────
+const MONTH_NAMES = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+const DAY_NAMES   = ['S','M','T','W','T','F','S'];
 
 function getDaysInMonth(year: number, month: number) {
   return new Date(year, month + 1, 0).getDate();
 }
-
 function getFirstDayOfMonth(year: number, month: number) {
   return new Date(year, month, 1).getDay();
 }
 
-function MiniCalendar({ posts }: { posts: ContentPost[] }) {
-  const now = new Date();
-  const year = now.getFullYear();
-  const month = now.getMonth();
-  const days = getDaysInMonth(year, month);
-  const firstDay = getFirstDayOfMonth(year, month);
-  const today = now.getDate();
+// ─── Viral Score display ──────────────────────────────────────────────────────
+function ViralScoreBadge({ score }: { score: number }) {
+  const fires = score >= 9.3 ? 3 : score >= 8.5 ? 2 : 1;
+  return (
+    <View style={vs.wrap}>
+      <Text style={vs.fires}>{'🔥'.repeat(fires)}</Text>
+      <Text style={vs.score}>{score.toFixed(1)}</Text>
+    </View>
+  );
+}
+const vs = StyleSheet.create({
+  wrap:  { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  fires: { fontSize: 11 },
+  score: { fontSize: 12, fontWeight: '700', color: D.gold },
+});
 
-  const MONTH_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-  const DAY_NAMES = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
+// ─── Collapsible calendar ─────────────────────────────────────────────────────
+function CollapsibleCalendar({ posts }: { posts: ContentPost[] }) {
+  const [open, setOpen] = useState(false);
+  const now      = new Date();
+  const year     = now.getFullYear();
+  const month    = now.getMonth();
+  const days     = getDaysInMonth(year, month);
+  const firstDay = getFirstDayOfMonth(year, month);
+  const today    = now.getDate();
 
   const scheduledDays = new Set(
-    posts
-      .filter(p => p.scheduled_at)
-      .map(p => new Date(p.scheduled_at!).getDate())
+    posts.filter(p => p.scheduled_at).map(p => new Date(p.scheduled_at!).getDate())
   );
 
   const cells: (number | null)[] = [
@@ -81,77 +142,401 @@ function MiniCalendar({ posts }: { posts: ContentPost[] }) {
   ];
 
   return (
-    <Card>
-      <View style={calStyles.calHeader}>
-        <Text style={calStyles.calMonth}>{MONTH_NAMES[month]} {year}</Text>
-        <Text style={calStyles.calPostCount}>{posts.length} posts scheduled</Text>
-      </View>
-      <View style={calStyles.dayRow}>
-        {DAY_NAMES.map((d, i) => (
-          <Text key={i} style={calStyles.dayLabel}>{d}</Text>
-        ))}
-      </View>
-      <View style={calStyles.grid}>
-        {cells.map((day, i) => (
-          <View key={i} style={calStyles.cell}>
-            {day != null && (
-              <View style={[calStyles.dayCircle, day === today && calStyles.todayCircle, scheduledDays.has(day) && calStyles.scheduledCircle]}>
-                <Text style={[calStyles.dayNum, day === today && calStyles.todayNum, scheduledDays.has(day) && calStyles.scheduledNum]}>
-                  {day}
-                </Text>
-                {scheduledDays.has(day) && <View style={calStyles.dot} />}
-              </View>
-            )}
+    <View style={cal.wrapper}>
+      <TouchableOpacity style={cal.toggle} onPress={() => setOpen(o => !o)} activeOpacity={0.8}>
+        <Text style={cal.toggleIcon}>📅</Text>
+        <Text style={cal.toggleLabel}>View schedule</Text>
+        <Text style={cal.toggleCount}>{posts.length} posts</Text>
+        <Text style={cal.chevron}>{open ? '▲' : '▼'}</Text>
+      </TouchableOpacity>
+
+      {open && (
+        <View style={cal.body}>
+          <View style={cal.calHeader}>
+            <Text style={cal.calMonth}>{MONTH_NAMES[month]} {year}</Text>
           </View>
-        ))}
-      </View>
-    </Card>
+          <View style={cal.dayRow}>
+            {DAY_NAMES.map((d, i) => (
+              <Text key={i} style={cal.dayLabel}>{d}</Text>
+            ))}
+          </View>
+          <View style={cal.grid}>
+            {cells.map((day, i) => (
+              <View key={i} style={cal.cell}>
+                {day != null && (
+                  <View style={[
+                    cal.dayCircle,
+                    day === today && cal.todayCircle,
+                    scheduledDays.has(day) && cal.scheduledCircle,
+                  ]}>
+                    <Text style={[
+                      cal.dayNum,
+                      day === today && cal.todayNum,
+                      scheduledDays.has(day) && cal.scheduledNum,
+                    ]}>
+                      {day}
+                    </Text>
+                    {scheduledDays.has(day) && <View style={cal.dot} />}
+                  </View>
+                )}
+              </View>
+            ))}
+          </View>
+        </View>
+      )}
+    </View>
   );
 }
 
-const calStyles = StyleSheet.create({
-  calHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: Theme.space.md },
-  calMonth: { fontSize: Theme.font.size.subtitle, fontWeight: Theme.font.weight.semibold, color: Colors.text },
-  calPostCount: { fontSize: Theme.font.size.small, color: Colors.textSecondary },
-  dayRow: { flexDirection: 'row', marginBottom: Theme.space.sm },
-  dayLabel: { flex: 1, textAlign: 'center', fontSize: Theme.font.size.caption, color: Colors.textTertiary, fontWeight: Theme.font.weight.medium },
-  grid: { flexDirection: 'row', flexWrap: 'wrap' },
-  cell: { width: '14.28%', aspectRatio: 1, alignItems: 'center', justifyContent: 'center', paddingVertical: 2 },
-  dayCircle: { width: 28, height: 28, borderRadius: 14, alignItems: 'center', justifyContent: 'center' },
-  todayCircle: { backgroundColor: Colors.primary },
-  scheduledCircle: { backgroundColor: Colors.primary + '20' },
-  dayNum: { fontSize: 12, color: Colors.text },
-  todayNum: { color: Colors.textInverse, fontWeight: Theme.font.weight.bold },
-  scheduledNum: { color: Colors.primary, fontWeight: Theme.font.weight.semibold },
-  dot: { width: 4, height: 4, borderRadius: 2, backgroundColor: Colors.primary, position: 'absolute', bottom: 2 },
+const cal = StyleSheet.create({
+  wrapper:        { backgroundColor: D.surface, borderRadius: Theme.radius.xl, borderWidth: 1, borderColor: D.border, overflow: 'hidden' },
+  toggle:         { flexDirection: 'row', alignItems: 'center', padding: Theme.space.lg, gap: Theme.space.sm },
+  toggleIcon:     { fontSize: 18 },
+  toggleLabel:    { flex: 1, fontSize: Theme.font.size.body, fontWeight: Theme.font.weight.semibold, color: D.text },
+  toggleCount:    { fontSize: Theme.font.size.small, color: D.textSec },
+  chevron:        { fontSize: 11, color: D.textSec, marginLeft: 4 },
+  body:           { borderTopWidth: 1, borderTopColor: D.border, padding: Theme.space.lg },
+  calHeader:      { marginBottom: Theme.space.md },
+  calMonth:       { fontSize: Theme.font.size.subtitle, fontWeight: Theme.font.weight.semibold, color: D.text },
+  dayRow:         { flexDirection: 'row', marginBottom: Theme.space.sm },
+  dayLabel:       { flex: 1, textAlign: 'center', fontSize: Theme.font.size.caption, color: D.textSec, fontWeight: Theme.font.weight.medium },
+  grid:           { flexDirection: 'row', flexWrap: 'wrap' },
+  cell:           { width: '14.28%', aspectRatio: 1, alignItems: 'center', justifyContent: 'center', paddingVertical: 2 },
+  dayCircle:      { width: 28, height: 28, borderRadius: 14, alignItems: 'center', justifyContent: 'center' },
+  todayCircle:    { backgroundColor: D.green },
+  scheduledCircle:{ backgroundColor: D.green + '30' },
+  dayNum:         { fontSize: 12, color: D.textSec },
+  todayNum:       { color: '#FFFFFF', fontWeight: Theme.font.weight.bold },
+  scheduledNum:   { color: D.green, fontWeight: Theme.font.weight.semibold },
+  dot:            { width: 4, height: 4, borderRadius: 2, backgroundColor: D.green, position: 'absolute', bottom: 2 },
 });
 
+// ─── Teleprompter modal ───────────────────────────────────────────────────────
+interface TeleprompterProps {
+  visible: boolean;
+  script: string;
+  videoTypeLabel: string;
+  onClose: () => void;
+}
+
+function TeleprompterModal({ visible, script, videoTypeLabel, onClose }: TeleprompterProps) {
+  const filmChecklist = [
+    'Charge your phone — aim for full battery',
+    'Film vertical (9:16) for TikTok and Reels',
+    'Clean your lens with a soft cloth',
+    'Find good natural light (golden hour is best)',
+    'Record 3+ takes and pick the best',
+    'Speak clearly and deliver your hook in the first 3 seconds',
+    'Add captions in the platform editor before posting',
+  ];
+
+  return (
+    <Modal visible={visible} animationType="slide" presentationStyle="fullScreen" onRequestClose={onClose}>
+      <View style={tp.container}>
+        <View style={tp.header}>
+          <TouchableOpacity style={tp.closeBtn} onPress={onClose}>
+            <Text style={tp.closeText}>✕ Done</Text>
+          </TouchableOpacity>
+          <Text style={tp.headerTitle}>TELEPROMPTER</Text>
+          <View style={{ width: 72 }} />
+        </View>
+
+        <ScrollView style={tp.scroll} contentContainerStyle={tp.scrollContent}>
+          <View style={tp.typeTag}>
+            <Text style={tp.typeTagText}>{videoTypeLabel.toUpperCase()}</Text>
+          </View>
+
+          <Text style={tp.scriptText}>{script}</Text>
+
+          <View style={tp.divider} />
+
+          <Text style={tp.checklistTitle}>📋 FILMING CHECKLIST</Text>
+          {filmChecklist.map((item, i) => (
+            <View key={i} style={tp.checkRow}>
+              <View style={tp.checkbox} />
+              <Text style={tp.checkText}>{item}</Text>
+            </View>
+          ))}
+        </ScrollView>
+      </View>
+    </Modal>
+  );
+}
+
+const tp = StyleSheet.create({
+  container:     { flex: 1, backgroundColor: '#000000' },
+  header:        { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 20, paddingTop: 56, paddingBottom: 16, borderBottomWidth: 1, borderBottomColor: '#1A1A1A' },
+  closeBtn:      { paddingVertical: 8, paddingHorizontal: 4 },
+  closeText:     { fontSize: 15, color: D.gold, fontWeight: '600' },
+  headerTitle:   { fontSize: 13, fontWeight: '800', color: '#555555', letterSpacing: 2 },
+  scroll:        { flex: 1 },
+  scrollContent: { padding: 24, paddingBottom: 60, gap: 24 },
+  typeTag:       { backgroundColor: D.green + '25', borderRadius: 6, paddingHorizontal: 12, paddingVertical: 4, alignSelf: 'flex-start', borderWidth: 1, borderColor: D.green + '60' },
+  typeTagText:   { fontSize: 11, fontWeight: '700', color: D.green, letterSpacing: 1.5 },
+  scriptText:    { fontSize: 28, fontWeight: '600', color: '#FFFFFF', lineHeight: 44, letterSpacing: 0.3 },
+  divider:       { height: 1, backgroundColor: '#1C1C1C' },
+  checklistTitle:{ fontSize: 13, fontWeight: '700', color: '#666666', letterSpacing: 1.5 },
+  checkRow:      { flexDirection: 'row', alignItems: 'flex-start', gap: 12 },
+  checkbox:      { width: 20, height: 20, borderRadius: 4, borderWidth: 2, borderColor: '#333333', marginTop: 2 },
+  checkText:     { flex: 1, fontSize: 16, color: '#AAAAAA', lineHeight: 26 },
+});
+
+// ─── AI Video Generate Modal ──────────────────────────────────────────────────
+interface VideoGenerateProps {
+  visible: boolean;
+  videoId: string | null;
+  invokeError: string | null;
+  onClose: () => void;
+}
+
+const PROGRESS_STEPS = [
+  { key: 'voice',   label: 'Generating voiceover',   icon: '🎙' },
+  { key: 'footage', label: 'Finding stock footage',   icon: '🎬' },
+  { key: 'render',  label: 'Rendering your video',    icon: '⚙️' },
+];
+
+function VideoGenerateModal({ visible, videoId, invokeError, onClose }: VideoGenerateProps) {
+  const [video, setVideo] = useState<GeneratedVideo | null>(null);
+  const [stepIndex, setStepIndex] = useState(0);
+  const channelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
+  const stepTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  useEffect(() => {
+    if (!visible || !videoId) {
+      setVideo(null);
+      setStepIndex(0);
+      return;
+    }
+
+    // Animate through progress steps every ~8 seconds while processing
+    stepTimerRef.current = setInterval(() => {
+      setStepIndex(i => (i < PROGRESS_STEPS.length - 1 ? i + 1 : i));
+    }, 8000);
+
+    // Subscribe to Realtime updates on this video row
+    const channel = supabase
+      .channel(`video-${videoId}`)
+      .on(
+        'postgres_changes',
+        { event: 'UPDATE', schema: 'public', table: 'generated_videos', filter: `id=eq.${videoId}` },
+        (payload) => {
+          const updated = payload.new as GeneratedVideo;
+          setVideo(updated);
+          if (updated.status === 'ready' || updated.status === 'failed') {
+            clearInterval(stepTimerRef.current!);
+            setStepIndex(PROGRESS_STEPS.length - 1);
+          }
+        },
+      )
+      .subscribe();
+
+    channelRef.current = channel;
+
+    return () => {
+      clearInterval(stepTimerRef.current!);
+      supabase.removeChannel(channel);
+    };
+  }, [visible, videoId]);
+
+  const handleShare = async () => {
+    if (!video?.video_url) return;
+    try {
+      await Share.share({ url: video.video_url, message: 'Check out my tree service video!' });
+    } catch {
+      await Linking.openURL(video.video_url);
+    }
+  };
+
+  const isReady   = video?.status === 'ready';
+  const isFailed  = video?.status === 'failed' || (!videoId && !!invokeError);
+  const isPending = !isReady && !isFailed;
+
+  // Merge error sources
+  const errorMessage = video?.error_message ?? invokeError ?? 'Something went wrong.';
+
+  return (
+    <Modal visible={visible} animationType="slide" presentationStyle="pageSheet" onRequestClose={onClose}>
+      <View style={vg.container}>
+        <View style={vg.header}>
+          <TouchableOpacity onPress={onClose}>
+            <Text style={vg.closeTxt}>Done</Text>
+          </TouchableOpacity>
+          <Text style={vg.headerTitle}>AI Video</Text>
+          <View style={{ width: 44 }} />
+        </View>
+
+        <View style={vg.body}>
+          {isPending && (
+            <>
+              <ActivityIndicator color={D.green} size="large" style={{ marginBottom: 24 }} />
+              <Text style={vg.processingTitle}>Creating your video…</Text>
+              <Text style={vg.processingSubtitle}>This takes about 60 seconds</Text>
+
+              <View style={vg.stepList}>
+                {PROGRESS_STEPS.map((step, i) => {
+                  const done    = i < stepIndex;
+                  const current = i === stepIndex;
+                  return (
+                    <View key={step.key} style={vg.stepRow}>
+                      <View style={[vg.stepDot, done && vg.stepDotDone, current && vg.stepDotActive]}>
+                        <Text style={vg.stepDotText}>
+                          {done ? '✓' : current ? '◉' : '○'}
+                        </Text>
+                      </View>
+                      <Text style={[vg.stepLabel, done && vg.stepLabelDone, current && vg.stepLabelActive]}>
+                        {step.icon} {step.label}
+                      </Text>
+                    </View>
+                  );
+                })}
+              </View>
+
+              <View style={vg.tipCard}>
+                <Text style={vg.tipTitle}>While you wait…</Text>
+                <Text style={vg.tipText}>
+                  Your video is 1080×1920 (9:16) — ready to post directly to TikTok, Instagram Reels, and YouTube Shorts.
+                </Text>
+              </View>
+            </>
+          )}
+
+          {isReady && (
+            <>
+              <Text style={vg.readyEmoji}>🎉</Text>
+              <Text style={vg.readyTitle}>Your video is ready!</Text>
+              <Text style={vg.readySubtitle}>Tap share to post it to your socials</Text>
+
+              {video?.thumbnail_url && (
+                <View style={vg.thumbnailWrap}>
+                  {/* Native Image not imported — show a placeholder card */}
+                  <View style={vg.thumbnailPlaceholder}>
+                    <Text style={vg.thumbnailIcon}>▶</Text>
+                  </View>
+                </View>
+              )}
+
+              <TouchableOpacity style={vg.shareBtn} onPress={handleShare} activeOpacity={0.85}>
+                <Text style={vg.shareBtnText}>📤 Share Video</Text>
+              </TouchableOpacity>
+
+              {video?.video_url && (
+                <TouchableOpacity
+                  style={vg.openBtn}
+                  onPress={() => Linking.openURL(video.video_url!)}
+                  activeOpacity={0.8}
+                >
+                  <Text style={vg.openBtnText}>Open in browser →</Text>
+                </TouchableOpacity>
+              )}
+            </>
+          )}
+
+          {isFailed && (
+            <>
+              <Text style={vg.errorEmoji}>⚠️</Text>
+              <Text style={vg.errorTitle}>Video generation failed</Text>
+              <Text style={vg.errorMessage}>{errorMessage}</Text>
+
+              <View style={vg.keysCard}>
+                <Text style={vg.keysTitle}>Required API keys (Supabase → Edge Functions → Secrets):</Text>
+                {['ELEVENLABS_API_KEY', 'PEXELS_API_KEY', 'CREATOMATE_API_KEY'].map(k => (
+                  <Text key={k} style={vg.keyItem}>• {k}</Text>
+                ))}
+              </View>
+
+              <TouchableOpacity style={vg.retryBtn} onPress={onClose} activeOpacity={0.8}>
+                <Text style={vg.retryBtnText}>Close</Text>
+              </TouchableOpacity>
+            </>
+          )}
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
+const vg = StyleSheet.create({
+  container:          { flex: 1, backgroundColor: D.bg },
+  header:             { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: Theme.layout.screenPadding, paddingTop: Theme.space.xl, borderBottomWidth: 1, borderBottomColor: D.border, backgroundColor: D.surface },
+  closeTxt:           { fontSize: Theme.font.size.body, color: D.green, fontWeight: Theme.font.weight.semibold },
+  headerTitle:        { fontSize: Theme.font.size.subtitle, fontWeight: Theme.font.weight.semibold, color: D.text },
+  body:               { flex: 1, alignItems: 'center', justifyContent: 'center', padding: Theme.layout.screenPadding, gap: 16 },
+
+  processingTitle:    { fontSize: Theme.font.size.title, fontWeight: Theme.font.weight.bold, color: D.text, textAlign: 'center' },
+  processingSubtitle: { fontSize: Theme.font.size.small, color: D.textSec, textAlign: 'center', marginTop: -8 },
+
+  stepList:           { width: '100%', gap: 14, marginTop: 8 },
+  stepRow:            { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  stepDot:            { width: 28, height: 28, borderRadius: 14, backgroundColor: D.surfaceAlt, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: D.border },
+  stepDotActive:      { borderColor: D.green, backgroundColor: D.green + '25' },
+  stepDotDone:        { borderColor: D.green, backgroundColor: D.green },
+  stepDotText:        { fontSize: 11, color: D.textSec, fontWeight: '700' },
+  stepLabel:          { fontSize: Theme.font.size.body, color: D.textSec },
+  stepLabelActive:    { color: D.text, fontWeight: Theme.font.weight.medium },
+  stepLabelDone:      { color: D.green },
+
+  tipCard:            { backgroundColor: D.surface, borderRadius: Theme.radius.xl, padding: Theme.space.lg, borderWidth: 1, borderColor: D.border, width: '100%', gap: 6, marginTop: 8 },
+  tipTitle:           { fontSize: Theme.font.size.small, fontWeight: Theme.font.weight.bold, color: D.gold },
+  tipText:            { fontSize: Theme.font.size.small, color: D.textSec, lineHeight: 20 },
+
+  readyEmoji:         { fontSize: 56, textAlign: 'center' },
+  readyTitle:         { fontSize: Theme.font.size.title, fontWeight: Theme.font.weight.bold, color: D.text, textAlign: 'center' },
+  readySubtitle:      { fontSize: Theme.font.size.small, color: D.textSec, textAlign: 'center' },
+
+  thumbnailWrap:      { width: '100%', aspectRatio: 9/16, maxHeight: 280, borderRadius: Theme.radius.xl, overflow: 'hidden' },
+  thumbnailPlaceholder: { flex: 1, backgroundColor: D.surfaceAlt, alignItems: 'center', justifyContent: 'center', borderRadius: Theme.radius.xl, borderWidth: 1, borderColor: D.border },
+  thumbnailIcon:      { fontSize: 48, color: D.green },
+
+  shareBtn:           { backgroundColor: D.green, width: '100%', paddingVertical: 16, borderRadius: Theme.radius.lg, alignItems: 'center' },
+  shareBtnText:       { fontSize: Theme.font.size.body, fontWeight: Theme.font.weight.bold, color: '#FFFFFF' },
+  openBtn:            { paddingVertical: 8 },
+  openBtnText:        { fontSize: Theme.font.size.small, color: D.textSec },
+
+  errorEmoji:         { fontSize: 48, textAlign: 'center' },
+  errorTitle:         { fontSize: Theme.font.size.subtitle, fontWeight: Theme.font.weight.bold, color: '#F87171', textAlign: 'center' },
+  errorMessage:       { fontSize: Theme.font.size.small, color: D.textSec, textAlign: 'center', lineHeight: 20 },
+  keysCard:           { backgroundColor: D.surface, borderRadius: Theme.radius.lg, padding: Theme.space.lg, borderWidth: 1, borderColor: D.border, width: '100%', gap: 6 },
+  keysTitle:          { fontSize: Theme.font.size.small, fontWeight: Theme.font.weight.semibold, color: D.text, marginBottom: 4 },
+  keyItem:            { fontSize: Theme.font.size.small, color: D.textSec, fontFamily: 'monospace' } as any,
+  retryBtn:           { width: '100%', paddingVertical: 14, borderRadius: Theme.radius.lg, alignItems: 'center', borderWidth: 1, borderColor: D.border },
+  retryBtnText:       { fontSize: Theme.font.size.body, color: D.text },
+});
+
+// ─── Main screen ──────────────────────────────────────────────────────────────
 export default function ContentScreen() {
   const { company } = useAuthStore();
-  const [posts, setPosts] = useState<ContentPost[]>([]);
-  const [connections, setConnections] = useState<SocialConnection[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
+  const [posts,             setPosts]             = useState<ContentPost[]>([]);
+  const [connections,       setConnections]       = useState<SocialConnection[]>([]);
+  const [loading,           setLoading]           = useState(true);
+  const [refreshing,        setRefreshing]        = useState(false);
   const [selectedVideoType, setSelectedVideoType] = useState<string | null>(null);
-  const [generatingScript, setGeneratingScript] = useState(false);
-  const [script, setScript] = useState<string | null>(null);
-  const [scriptModal, setScriptModal] = useState(false);
+  const [generatingScript,  setGeneratingScript]  = useState(false);
+  const [script,            setScript]            = useState<string | null>(null);
+  const [scriptModal,       setScriptModal]       = useState(false);
+  const [teleprompterModal, setTeleprompterModal] = useState(false);
+  const [videoModal,        setVideoModal]        = useState(false);
+  const [videoJobId,        setVideoJobId]        = useState<string | null>(null);
+  const [videoInvokeError,  setVideoInvokeError]  = useState<string | null>(null);
+  const [generatingVideo,   setGeneratingVideo]   = useState(false);
 
+  // ── Data fetching ──────────────────────────────────────────────────────────
   const fetchData = useCallback(async () => {
     if (!company) return;
-    const [postsRes, connectionsRes] = await Promise.all([
-      supabase
-        .from('content_posts')
-        .select('*')
-        .eq('company_id', company.id)
-        .order('scheduled_at', { ascending: true }),
-      supabase
+    const postsRes = await supabase
+      .from('content_posts')
+      .select('*')
+      .eq('company_id', company.id)
+      .order('scheduled_at', { ascending: true });
+    setPosts(postsRes.data ?? []);
+    try {
+      const connectionsRes = await supabase
         .from('social_connections')
         .select('*')
-        .eq('company_id', company.id),
-    ]);
-    setPosts(postsRes.data ?? []);
-    setConnections(connectionsRes.data ?? []);
+        .eq('company_id', company.id);
+      setConnections(connectionsRes.data ?? []);
+    } catch {
+      setConnections([]);
+    }
   }, [company]);
 
   const refresh = useCallback(async () => {
@@ -164,8 +549,9 @@ export default function ContentScreen() {
     fetchData().finally(() => setLoading(false));
   }, [fetchData]);
 
+  // ── Script generation ──────────────────────────────────────────────────────
   const generateScript = async (videoType: string) => {
-    const key = process.env.EXPO_PUBLIC_OPENROUTER_KEY;
+    const key = process.env.EXPO_PUBLIC_OPENROUTER_API_KEY;
     if (!key || !company) {
       setScript('Connect your OpenRouter API key in settings to generate AI scripts.');
       setScriptModal(true);
@@ -213,208 +599,414 @@ Keep it conversational, authentic, and specific to tree service. Include [ACTION
     }
   };
 
-  const upcomingPosts = posts.filter(p => p.status === 'scheduled');
-  const draftPosts = posts.filter(p => p.status === 'draft');
+  // ── AI video generation ────────────────────────────────────────────────────
+  const generateVideo = async () => {
+    if (!company || !script || !selectedVideoType) return;
+    setGeneratingVideo(true);
+    setScriptModal(false);
+    setVideoInvokeError(null);
+    setVideoJobId(null);
 
+    try {
+      const { data, error } = await supabase.functions.invoke('generate-video', {
+        body: { script, videoType: selectedVideoType, companyId: company.id },
+      });
+      if (error) throw error;
+      setVideoJobId(data.id);
+    } catch (err: any) {
+      setVideoInvokeError(
+        err?.message?.includes('Failed to send')
+          ? 'Edge function not deployed. Deploy generate-video in Supabase Dashboard → Edge Functions.'
+          : (err?.message ?? 'Failed to start video generation. Check your Supabase Edge Function deployment.')
+      );
+    } finally {
+      setGeneratingVideo(false);
+      setVideoModal(true);
+    }
+  };
+
+  // ── Helpers ────────────────────────────────────────────────────────────────
+  const postTitle = (p: ContentPost) =>
+    p.video_type
+      ? p.video_type.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())
+      : 'Content Post';
+
+  const upcomingPosts = posts.filter(p => p.status === 'scheduled');
+  const draftPosts    = posts.filter(p => p.status === 'draft');
+
+  const selectedVideoTypeLabel =
+    VIDEO_TYPES.find(v => v.key === selectedVideoType)?.label ?? 'Script';
+
+  // ── Render ─────────────────────────────────────────────────────────────────
   return (
     <ScrollView
-      style={styles.container}
-      contentContainerStyle={styles.content}
-      refreshControl={<RefreshControl refreshing={refreshing} onRefresh={refresh} tintColor={Colors.primary} />}
+      style={s.container}
+      contentContainerStyle={s.content}
+      refreshControl={<RefreshControl refreshing={refreshing} onRefresh={refresh} tintColor={D.green} />}
     >
-      <Text style={styles.pageTitle}>Content</Text>
+      {/* ── Page header ── */}
+      <View style={s.pageHeader}>
+        <Text style={s.pageTitle}>Content Studio</Text>
+        <Text style={s.pageSubtitle}>Create viral videos for your tree service</Text>
+      </View>
 
-      {/* Calendar */}
-      <MiniCalendar posts={upcomingPosts} />
-
-      {/* Upcoming posts */}
-      <Text style={styles.sectionTitle}>Scheduled posts</Text>
+      {/* ── Scheduled posts ── */}
+      <Text style={s.sectionTitle}>SCHEDULED POSTS</Text>
       {loading ? (
-        <ActivityIndicator color={Colors.primary} />
+        <ActivityIndicator color={D.green} style={{ marginVertical: 20 }} />
       ) : upcomingPosts.length === 0 ? (
-        <EmptyState
-          icon="📅"
-          title="No posts scheduled"
-          description="Use the script generator below to create content, then schedule it to your platforms."
-        />
+        <View style={s.emptyCard}>
+          <Text style={s.emptyIcon}>📅</Text>
+          <Text style={s.emptyTitle}>No posts scheduled</Text>
+          <Text style={s.emptyDesc}>
+            Use the Viral Script Studio below to create content, then schedule it.
+          </Text>
+        </View>
       ) : (
-        <Card padding={false}>
+        <View style={s.card}>
           {upcomingPosts.map((post, i) => (
-            <View key={post.id} style={[styles.postRow, i < upcomingPosts.length - 1 && styles.postBorder]}>
-              <View style={styles.postInfo}>
-                <Text style={styles.postTitle}>{post.title}</Text>
-                <View style={styles.postMeta}>
-                  <Badge label={post.type.replace(/_/g, ' ')} variant="neutral" />
-                  <Text style={styles.postDate}>
-                    {post.scheduled_at ? new Date(post.scheduled_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : 'Unscheduled'}
+            <View key={post.id} style={[s.postRow, i < upcomingPosts.length - 1 && s.postBorder]}>
+              <View style={s.postInfo}>
+                <Text style={s.postTitle}>{postTitle(post)}</Text>
+                <View style={s.postMeta}>
+                  <Badge label={(post.video_type ?? 'post').replace(/_/g, ' ')} variant="neutral" />
+                  <Text style={s.postDate}>
+                    {post.scheduled_at
+                      ? new Date(post.scheduled_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+                      : 'Unscheduled'}
                   </Text>
                 </View>
               </View>
-              <Text style={styles.postPlatformEmoji}>
+              <Text style={s.postPlatformEmoji}>
                 {SOCIAL_PLATFORMS.find(p => p.key === post.platform)?.emoji ?? '📱'}
               </Text>
             </View>
           ))}
-        </Card>
+        </View>
       )}
 
-      {/* Draft posts */}
+      {/* ── Drafts ── */}
       {draftPosts.length > 0 && (
         <>
-          <Text style={styles.sectionTitle}>Drafts</Text>
-          <Card padding={false}>
+          <Text style={s.sectionTitle}>DRAFTS</Text>
+          <View style={s.card}>
             {draftPosts.map((post, i) => (
-              <View key={post.id} style={[styles.postRow, i < draftPosts.length - 1 && styles.postBorder]}>
-                <View style={styles.postInfo}>
-                  <Text style={styles.postTitle}>{post.title}</Text>
+              <View key={post.id} style={[s.postRow, i < draftPosts.length - 1 && s.postBorder]}>
+                <View style={s.postInfo}>
+                  <Text style={s.postTitle}>{postTitle(post)}</Text>
                   <Badge label="draft" variant="warning" />
                 </View>
-                <Text style={styles.postPlatformEmoji}>
+                <Text style={s.postPlatformEmoji}>
                   {SOCIAL_PLATFORMS.find(p => p.key === post.platform)?.emoji ?? '📱'}
                 </Text>
               </View>
             ))}
-          </Card>
+          </View>
         </>
       )}
 
-      {/* Script generator */}
-      <Text style={styles.sectionTitle}>AI Script Generator</Text>
-      <Card>
-        <Text style={styles.scriptGenSubtitle}>Tap a video type to generate a 30-60 second script</Text>
-        <View style={styles.videoTypeGrid}>
-          {VIDEO_TYPES.map(vt => (
-            <TouchableOpacity
-              key={vt.key}
-              style={styles.videoTypeBtn}
-              onPress={() => generateScript(vt.key)}
-              activeOpacity={0.8}
-            >
-              <Text style={styles.videoTypeEmoji}>{vt.emoji}</Text>
-              <Text style={styles.videoTypeLbl}>{vt.label}</Text>
-            </TouchableOpacity>
-          ))}
+      {/* ── Viral Script Studio ── */}
+      <Text style={s.sectionTitle}>VIRAL SCRIPT STUDIO</Text>
+      <View style={s.studioHeader}>
+        <View style={s.aiPill}>
+          <Text style={s.aiPillText}>✦ AI-Powered</Text>
         </View>
-      </Card>
+        <Text style={s.studioSubtitle}>
+          Tap a video type to generate a 30–60 sec script. Higher 🔥 = more viral potential.
+        </Text>
+      </View>
 
-      {/* Connected platforms */}
-      <Text style={styles.sectionTitle}>Platforms</Text>
-      <Card padding={false}>
-        {SOCIAL_PLATFORMS.map((platform, i) => {
+      <View style={s.videoTypeGrid}>
+        {VIDEO_TYPES.map(vt => (
+          <TouchableOpacity
+            key={vt.key}
+            style={s.videoTypeCard}
+            onPress={() => generateScript(vt.key)}
+            activeOpacity={0.75}
+          >
+            <Text style={s.videoTypeEmoji}>{vt.emoji}</Text>
+            <Text style={s.videoTypeLabel}>{vt.label}</Text>
+            <ViralScoreBadge score={vt.viralScore} />
+          </TouchableOpacity>
+        ))}
+      </View>
+
+      {/* ── Platforms ── */}
+      <Text style={s.sectionTitle}>PLATFORMS</Text>
+      <View style={s.platformsWrap}>
+        {SOCIAL_PLATFORMS.map(platform => {
           const conn = connections.find(c => c.platform === platform.key);
           return (
-            <View key={platform.key} style={[styles.platformRow, i < SOCIAL_PLATFORMS.length - 1 && styles.platformBorder]}>
-              <Text style={styles.platformEmoji}>{platform.emoji}</Text>
-              <View style={styles.platformInfo}>
-                <Text style={styles.platformName}>{platform.label}</Text>
-                {conn?.handle && <Text style={styles.platformHandle}>@{conn.handle}</Text>}
+            <View
+              key={platform.key}
+              style={[s.platformCard, { backgroundColor: platform.cardBg, borderColor: platform.cardBorder }]}
+            >
+              <View style={s.platformCardLeft}>
+                <Text style={[s.platformEmoji, { color: platform.textColor }]}>{platform.emoji}</Text>
+                <View style={s.platformTextGroup}>
+                  <Text style={[s.platformName, { color: platform.textColor }]}>{platform.label}</Text>
+                  <Text style={s.platformTagline}>{platform.tagline}</Text>
+                  {conn?.handle && (
+                    <Text style={[s.platformHandle, { color: platform.textColor + 'BB' }]}>
+                      @{conn.handle}
+                    </Text>
+                  )}
+                </View>
               </View>
-              {conn?.connected ? (
-                <Badge label="Connected" variant="success" />
-              ) : (
-                <Button label="Connect" size="sm" variant="secondary" onPress={() => {}} />
-              )}
+              <View>
+                {conn?.connected ? (
+                  <View style={[s.connectedPill, { borderColor: platform.textColor + '60', backgroundColor: platform.textColor + '18' }]}>
+                    <Text style={[s.connectedText, { color: platform.textColor }]}>● Connected</Text>
+                  </View>
+                ) : (
+                  <TouchableOpacity
+                    style={s.connectBtn}
+                    onPress={() => {}}
+                    activeOpacity={0.8}
+                  >
+                    <Text style={s.connectBtnText}>Connect</Text>
+                  </TouchableOpacity>
+                )}
+              </View>
             </View>
           );
         })}
-      </Card>
+      </View>
 
-      {/* Script modal */}
-      <Modal visible={scriptModal} animationType="slide" presentationStyle="pageSheet" onRequestClose={() => setScriptModal(false)}>
-        <View style={styles.scriptModal}>
-          <View style={styles.scriptModalHeader}>
+      {/* ── Collapsible calendar (bottom) ── */}
+      <CollapsibleCalendar posts={upcomingPosts} />
+
+      {/* ── Script modal ── */}
+      <Modal
+        visible={scriptModal}
+        animationType="slide"
+        presentationStyle="pageSheet"
+        onRequestClose={() => setScriptModal(false)}
+      >
+        <View style={sm.container}>
+          <View style={sm.header}>
             <TouchableOpacity onPress={() => setScriptModal(false)}>
-              <Text style={styles.scriptModalClose}>Done</Text>
+              <Text style={sm.closeTxt}>Done</Text>
             </TouchableOpacity>
-            <Text style={styles.scriptModalTitle}>
-              {VIDEO_TYPES.find(v => v.key === selectedVideoType)?.label ?? 'Script'}
-            </Text>
+            <Text style={sm.headerTitle}>{selectedVideoTypeLabel}</Text>
             <View style={{ width: 44 }} />
           </View>
 
-          <ScrollView style={styles.scriptScroll} contentContainerStyle={styles.scriptContent}>
+          <ScrollView style={sm.scroll} contentContainerStyle={sm.scrollContent}>
             {generatingScript ? (
-              <View style={styles.scriptLoading}>
-                <ActivityIndicator color={Colors.ai} size="large" />
-                <Text style={styles.scriptLoadingText}>Writing your script...</Text>
+              <View style={sm.loadingWrap}>
+                <ActivityIndicator color={D.purple} size="large" />
+                <Text style={sm.loadingTitle}>Writing your script...</Text>
+                <Text style={sm.loadingSubtitle}>Claude is crafting something viral</Text>
               </View>
             ) : script ? (
               <>
-                <View style={styles.scriptAiBadge}>
-                  <Text style={styles.scriptAiLabel}>🤖 AI-generated script</Text>
+                <View style={sm.aiBadge}>
+                  <Text style={sm.aiBadgeText}>✦ AI-generated script</Text>
                 </View>
-                <Text style={styles.scriptText}>{script}</Text>
-                <Button
-                  label="Generate another"
-                  variant="secondary"
-                  onPress={() => selectedVideoType && generateScript(selectedVideoType)}
-                  style={styles.regenBtn}
-                />
+
+                {selectedVideoType && (() => {
+                  const vt = VIDEO_TYPES.find(v => v.key === selectedVideoType);
+                  return vt ? (
+                    <View style={sm.scoreRow}>
+                      <Text style={sm.scoreLabel}>Viral score</Text>
+                      <ViralScoreBadge score={vt.viralScore} />
+                    </View>
+                  ) : null;
+                })()}
+
+                <View style={sm.scriptBox}>
+                  <Text style={sm.scriptText}>{script}</Text>
+                </View>
+
+                <View style={sm.actionRow}>
+                  <Button
+                    label="Regenerate"
+                    variant="secondary"
+                    size="sm"
+                    onPress={() => selectedVideoType && generateScript(selectedVideoType)}
+                    style={sm.regenBtn}
+                  />
+                </View>
+
+                <View style={sm.makeVideoSection}>
+                  <Text style={sm.makeVideoLabel}>MAKE THIS VIDEO</Text>
+
+                  {/* Film yourself option */}
+                  <TouchableOpacity
+                    style={sm.filmBtn}
+                    onPress={() => {
+                      setScriptModal(false);
+                      setTeleprompterModal(true);
+                    }}
+                    activeOpacity={0.85}
+                  >
+                    <View style={sm.filmBtnLeft}>
+                      <Text style={sm.filmBtnIcon}>📱</Text>
+                      <View>
+                        <Text style={sm.filmBtnTitle}>Film It Yourself</Text>
+                        <Text style={sm.filmBtnSubtitle}>Teleprompter + filming guide</Text>
+                      </View>
+                    </View>
+                    <Text style={sm.filmBtnArrow}>›</Text>
+                  </TouchableOpacity>
+
+                  {/* AI generate option */}
+                  <TouchableOpacity
+                    style={[sm.aiVideoBtn, generatingVideo && { opacity: 0.6 }]}
+                    onPress={generateVideo}
+                    disabled={generatingVideo}
+                    activeOpacity={0.85}
+                  >
+                    <View style={sm.filmBtnLeft}>
+                      {generatingVideo ? (
+                        <ActivityIndicator color="#FFFFFF" style={{ width: 28 }} />
+                      ) : (
+                        <Text style={sm.filmBtnIcon}>🎬</Text>
+                      )}
+                      <View>
+                        <Text style={[sm.filmBtnTitle, { color: '#FFFFFF' }]}>
+                          {generatingVideo ? 'Starting…' : 'Auto-Generate AI Video'}
+                        </Text>
+                        <Text style={[sm.filmBtnSubtitle, { color: 'rgba(255,255,255,0.6)' }]}>
+                          ElevenLabs · Pexels · Creatomate
+                        </Text>
+                      </View>
+                    </View>
+                    {!generatingVideo && <Text style={[sm.filmBtnArrow, { color: '#FFFFFF' }]}>›</Text>}
+                  </TouchableOpacity>
+                </View>
               </>
             ) : null}
           </ScrollView>
         </View>
       </Modal>
+
+      {/* ── Teleprompter modal ── */}
+      {script && (
+        <TeleprompterModal
+          visible={teleprompterModal}
+          script={script}
+          videoTypeLabel={selectedVideoTypeLabel}
+          onClose={() => setTeleprompterModal(false)}
+        />
+      )}
+
+      {/* ── AI Video Generate modal ── */}
+      <VideoGenerateModal
+        visible={videoModal}
+        videoId={videoJobId}
+        invokeError={videoInvokeError}
+        onClose={() => { setVideoModal(false); setVideoJobId(null); setVideoInvokeError(null); }}
+      />
     </ScrollView>
   );
 }
 
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: Colors.background },
-  content: { padding: Theme.layout.screenPadding, gap: Theme.space.lg, paddingBottom: 40, paddingTop: 60 },
-  pageTitle: { fontSize: Theme.font.size.headline, fontWeight: Theme.font.weight.bold, color: Colors.text },
-  sectionTitle: { fontSize: Theme.font.size.subtitle, fontWeight: Theme.font.weight.semibold, color: Colors.text },
-  postRow: { flexDirection: 'row', alignItems: 'center', padding: Theme.space.lg, gap: Theme.space.md },
-  postBorder: { borderBottomWidth: 1, borderBottomColor: Colors.border },
-  postInfo: { flex: 1, gap: 4 },
-  postTitle: { fontSize: Theme.font.size.body, fontWeight: Theme.font.weight.medium, color: Colors.text },
-  postMeta: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  postDate: { fontSize: Theme.font.size.small, color: Colors.textSecondary },
+// ─── Main styles ──────────────────────────────────────────────────────────────
+const s = StyleSheet.create({
+  container: { flex: 1, backgroundColor: D.bg },
+  content:   { padding: Theme.layout.screenPadding, gap: Theme.space.lg, paddingBottom: 48, paddingTop: 56 },
+
+  pageHeader:   { gap: 4, marginBottom: 4 },
+  pageTitle:    { fontSize: Theme.font.size.display, fontWeight: Theme.font.weight.heavy, color: D.text },
+  pageSubtitle: { fontSize: Theme.font.size.small, color: D.textSec },
+
+  sectionTitle: {
+    fontSize: 11,
+    fontWeight: '800' as const,
+    color: D.gold,
+    letterSpacing: 1.5,
+    marginBottom: -4,
+  },
+
+  card:            { backgroundColor: D.surface, borderRadius: Theme.radius.xl, borderWidth: 1, borderColor: D.border, overflow: 'hidden' },
+  postRow:         { flexDirection: 'row', alignItems: 'center', padding: Theme.space.lg, gap: Theme.space.md },
+  postBorder:      { borderBottomWidth: 1, borderBottomColor: D.border },
+  postInfo:        { flex: 1, gap: 6 },
+  postTitle:       { fontSize: Theme.font.size.body, fontWeight: Theme.font.weight.medium, color: D.text },
+  postMeta:        { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  postDate:        { fontSize: Theme.font.size.small, color: D.textSec },
   postPlatformEmoji: { fontSize: 22 },
-  scriptGenSubtitle: { fontSize: Theme.font.size.small, color: Colors.textSecondary, marginBottom: Theme.space.md },
+
+  emptyCard:  { backgroundColor: D.surface, borderRadius: Theme.radius.xl, borderWidth: 1, borderColor: D.border, alignItems: 'center', padding: Theme.space.xxxl, gap: Theme.space.sm },
+  emptyIcon:  { fontSize: 36 },
+  emptyTitle: { fontSize: Theme.font.size.subtitle, fontWeight: Theme.font.weight.semibold, color: D.text },
+  emptyDesc:  { fontSize: Theme.font.size.small, color: D.textSec, textAlign: 'center', lineHeight: 20 },
+
+  studioHeader:   { gap: 8, marginBottom: -4 },
+  aiPill:         { backgroundColor: D.purple + '25', borderRadius: Theme.radius.full, paddingHorizontal: 10, paddingVertical: 3, alignSelf: 'flex-start', borderWidth: 1, borderColor: D.purple + '50' },
+  aiPillText:     { fontSize: 11, fontWeight: '700' as const, color: D.purple, letterSpacing: 0.5 },
+  studioSubtitle: { fontSize: Theme.font.size.small, color: D.textSec, lineHeight: 20 },
+
   videoTypeGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: Theme.space.md },
-  videoTypeBtn: {
-    width: '30%',
-    aspectRatio: 1,
-    backgroundColor: Colors.surfaceSecondary,
-    borderRadius: Theme.radius.lg,
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 4,
+  videoTypeCard: {
+    width: '47.5%',
+    backgroundColor: D.surfaceAlt,
+    borderRadius: Theme.radius.xl,
     borderWidth: 1,
-    borderColor: Colors.border,
-  },
-  videoTypeEmoji: { fontSize: 24 },
-  videoTypeLbl: { fontSize: 10, color: Colors.text, fontWeight: Theme.font.weight.medium, textAlign: 'center' },
-  platformRow: { flexDirection: 'row', alignItems: 'center', padding: Theme.space.lg, gap: Theme.space.md },
-  platformBorder: { borderBottomWidth: 1, borderBottomColor: Colors.border },
-  platformEmoji: { fontSize: 26 },
-  platformInfo: { flex: 1 },
-  platformName: { fontSize: Theme.font.size.body, fontWeight: Theme.font.weight.medium, color: Colors.text },
-  platformHandle: { fontSize: Theme.font.size.small, color: Colors.textSecondary },
-  scriptModal: { flex: 1, backgroundColor: Colors.background },
-  scriptModalHeader: {
-    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
-    padding: Theme.layout.screenPadding, paddingTop: Theme.space.xl,
-    borderBottomWidth: 1, borderBottomColor: Colors.border,
-    backgroundColor: Colors.surface,
-  },
-  scriptModalTitle: { fontSize: Theme.font.size.subtitle, fontWeight: Theme.font.weight.semibold, color: Colors.text },
-  scriptModalClose: { fontSize: Theme.font.size.body, color: Colors.primary, fontWeight: Theme.font.weight.semibold },
-  scriptScroll: { flex: 1 },
-  scriptContent: { padding: Theme.layout.screenPadding, paddingBottom: 40, gap: Theme.space.lg },
-  scriptLoading: { alignItems: 'center', gap: Theme.space.lg, paddingTop: 60 },
-  scriptLoadingText: { fontSize: Theme.font.size.body, color: Colors.textSecondary },
-  scriptAiBadge: { backgroundColor: '#EDE9FE', paddingHorizontal: 12, paddingVertical: 4, borderRadius: Theme.radius.full, alignSelf: 'flex-start' },
-  scriptAiLabel: { fontSize: Theme.font.size.caption, color: Colors.ai, fontWeight: Theme.font.weight.semibold },
-  scriptText: {
-    fontSize: Theme.font.size.body,
-    color: Colors.text,
-    lineHeight: 26,
-    backgroundColor: Colors.surface,
-    borderRadius: Theme.radius.lg,
+    borderColor: D.border,
     padding: Theme.space.lg,
-    ...Theme.shadow.sm,
+    gap: Theme.space.sm,
+    minHeight: 110,
+    justifyContent: 'space-between',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.25,
+    shadowRadius: 8,
+    elevation: 4,
   },
-  regenBtn: { alignSelf: 'flex-start' },
+  videoTypeEmoji: { fontSize: 30 },
+  videoTypeLabel: { fontSize: Theme.font.size.small, fontWeight: Theme.font.weight.semibold, color: D.text, lineHeight: 18 },
+
+  platformsWrap:    { gap: Theme.space.md },
+  platformCard:     { borderRadius: Theme.radius.xl, borderWidth: 1.5, padding: Theme.space.lg, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  platformCardLeft: { flexDirection: 'row', alignItems: 'center', gap: Theme.space.md, flex: 1 },
+  platformTextGroup:{ flex: 1 },
+  platformEmoji:    { fontSize: 28, fontWeight: '900' as const },
+  platformName:     { fontSize: Theme.font.size.subtitle, fontWeight: Theme.font.weight.bold },
+  platformTagline:  { fontSize: Theme.font.size.caption, color: '#666666', marginTop: 2 },
+  platformHandle:   { fontSize: Theme.font.size.small, marginTop: 2 },
+  connectedPill:    { borderWidth: 1, borderRadius: Theme.radius.full, paddingHorizontal: 10, paddingVertical: 5 },
+  connectedText:    { fontSize: 12, fontWeight: '700' as const },
+  connectBtn:       { borderWidth: 1.5, borderColor: '#333333', borderRadius: Theme.radius.lg, paddingHorizontal: 16, paddingVertical: 8 },
+  connectBtnText:   { fontSize: Theme.font.size.small, fontWeight: Theme.font.weight.semibold, color: '#FFFFFF' },
+});
+
+// ─── Script modal styles ──────────────────────────────────────────────────────
+const sm = StyleSheet.create({
+  container:     { flex: 1, backgroundColor: D.bg },
+  header:        { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: Theme.layout.screenPadding, paddingTop: Theme.space.xl, borderBottomWidth: 1, borderBottomColor: D.border, backgroundColor: D.surface },
+  closeTxt:      { fontSize: Theme.font.size.body, color: D.green, fontWeight: Theme.font.weight.semibold },
+  headerTitle:   { fontSize: Theme.font.size.subtitle, fontWeight: Theme.font.weight.semibold, color: D.text },
+  scroll:        { flex: 1 },
+  scrollContent: { padding: Theme.layout.screenPadding, paddingBottom: 48, gap: Theme.space.lg },
+
+  loadingWrap:     { alignItems: 'center', gap: Theme.space.lg, paddingTop: 72 },
+  loadingTitle:    { fontSize: Theme.font.size.subtitle, fontWeight: Theme.font.weight.semibold, color: D.text },
+  loadingSubtitle: { fontSize: Theme.font.size.small, color: D.textSec },
+
+  aiBadge:     { backgroundColor: D.purple + '25', paddingHorizontal: 12, paddingVertical: 4, borderRadius: Theme.radius.full, alignSelf: 'flex-start', borderWidth: 1, borderColor: D.purple + '50' },
+  aiBadgeText: { fontSize: Theme.font.size.caption, color: D.purple, fontWeight: Theme.font.weight.semibold },
+
+  scoreRow:   { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  scoreLabel: { fontSize: Theme.font.size.small, color: D.textSec },
+
+  scriptBox:  { backgroundColor: D.surface, borderRadius: Theme.radius.xl, padding: Theme.space.xl, borderWidth: 1, borderColor: D.border },
+  scriptText: { fontSize: Theme.font.size.body, color: D.text, lineHeight: 26 },
+
+  actionRow:           { flexDirection: 'row', gap: Theme.space.md, flexWrap: 'wrap' },
+  regenBtn:            { alignSelf: 'flex-start' },
+
+  makeVideoSection:    { gap: Theme.space.sm },
+  makeVideoLabel:      { fontSize: 10, fontWeight: '800' as const, color: D.gold, letterSpacing: 1.5 },
+
+  filmBtn:             { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', backgroundColor: D.surfaceAlt, borderRadius: Theme.radius.lg, padding: Theme.space.lg, borderWidth: 1, borderColor: D.border },
+  filmBtnLeft:         { flexDirection: 'row', alignItems: 'center', gap: 12, flex: 1 },
+  filmBtnIcon:         { fontSize: 26 },
+  filmBtnTitle:        { fontSize: Theme.font.size.body, fontWeight: Theme.font.weight.semibold, color: D.text },
+  filmBtnSubtitle:     { fontSize: Theme.font.size.caption, color: D.textSec, marginTop: 2 },
+  filmBtnArrow:        { fontSize: 22, color: D.textSec, fontWeight: '300' as const },
+
+  aiVideoBtn:          { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', backgroundColor: D.green, borderRadius: Theme.radius.lg, padding: Theme.space.lg },
 });

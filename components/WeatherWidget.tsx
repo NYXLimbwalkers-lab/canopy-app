@@ -12,13 +12,15 @@ interface Props {
 export function WeatherWidget({ onStormDetected }: Props) {
   const { company } = useAuthStore();
   const [weather, setWeather] = useState<WeatherCondition | null>(null);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [expanded, setExpanded] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     if (company?.city && isWeatherConfigured()) {
       load();
+    } else {
+      setLoading(false);
     }
   }, [company?.city]);
 
@@ -50,6 +52,14 @@ export function WeatherWidget({ onStormDetected }: Props) {
       <View style={styles.widget}>
         <ActivityIndicator size="small" color={Colors.primary} />
         <Text style={styles.loadingText}>Checking weather...</Text>
+      </View>
+    );
+  }
+
+  if (!company?.city) {
+    return (
+      <View style={[styles.widget, styles.unconfigured]}>
+        <Text style={styles.unconfiguredText}>🌤️ Add your city in Settings to see local weather & storm alerts</Text>
       </View>
     );
   }

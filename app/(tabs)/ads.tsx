@@ -7,6 +7,7 @@ import {
   RefreshControl,
   TouchableOpacity,
   ActivityIndicator,
+  Alert,
 } from 'react-native';
 import { Colors } from '@/constants/Colors';
 import { Theme } from '@/constants/Theme';
@@ -149,10 +150,16 @@ export default function AdsScreen() {
     if (!company) return;
     const [campaignRes, connectionRes] = await Promise.all([
       supabase.from('campaigns').select('*').eq('company_id', company.id).order('created_at', { ascending: false }),
-      supabase.from('ad_connections').select('*').eq('company_id', company.id),
+      supabase.from('ad_accounts').select('*').eq('company_id', company.id),
     ]);
     setCampaigns(campaignRes.data ?? []);
-    setConnections(connectionRes.data ?? []);
+    const mappedConnections: AdConnection[] = (connectionRes.data ?? []).map(a => ({
+      platform: a.platform as Platform,
+      connected: true,
+      account_id: a.account_id,
+      account_name: null,
+    }));
+    setConnections(mappedConnections);
   }, [company]);
 
   const refresh = useCallback(async () => {
@@ -166,9 +173,20 @@ export default function AdsScreen() {
   }, [fetchData]);
 
   const handleConnect = (platform: Platform) => {
-    // In production this would open OAuth flow for the platform
-    // For now show an informational alert — the user connects from platform settings
-    console.log(`[Canopy] Connect ${platform} — OAuth not yet wired`);
+    const platformName = PLATFORM_NAMES[platform];
+    Alert.alert(
+      `Connect ${platformName}`,
+      `To connect ${platformName}, go to your ${platformName} account settings and generate an API key or use the OAuth flow. OAuth integration is coming soon — for now you can manually add campaigns below.`,
+      [{ text: 'OK' }]
+    );
+  };
+
+  const handleNewCampaign = () => {
+    Alert.alert(
+      'Add Campaign',
+      'Campaign creation is managed through your Google Ads or Facebook Ads account. Connect your ad account above to automatically import your campaigns.',
+      [{ text: 'OK' }]
+    );
   };
 
   const getConnection = (platform: Platform) => connections.find(c => c.platform === platform);
@@ -186,7 +204,7 @@ export default function AdsScreen() {
     >
       <View style={styles.headerRow}>
         <Text style={styles.pageTitle}>Ad Platforms</Text>
-        <TouchableOpacity style={styles.newCampaignBtn}>
+        <TouchableOpacity style={styles.newCampaignBtn} onPress={handleNewCampaign}>
           <Text style={styles.newCampaignText}>+ Campaign</Text>
         </TouchableOpacity>
       </View>

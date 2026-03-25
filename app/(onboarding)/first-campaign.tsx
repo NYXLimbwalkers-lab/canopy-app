@@ -30,13 +30,12 @@ export default function FirstCampaignStep() {
         name: campaignName,
         platform: 'google',
         status: 'draft',
-        daily_budget_cents: 2000,
-        target_keywords: keywords,
-        city: city,
-        service_type: topService,
+        budget_daily: 20,
+        keywords: keywords,
+        campaign_type: 'search',
       });
       if (error) throw error;
-      await updateOnboardingStep(9);
+      try { await updateOnboardingStep(9); } catch {}
       router.push('/(onboarding)/done');
     } catch (err: any) {
       Alert.alert('Error', err.message ?? 'Failed to create campaign.');
@@ -46,7 +45,7 @@ export default function FirstCampaignStep() {
   };
 
   const handleSkip = async () => {
-    await updateOnboardingStep(9);
+    try { await updateOnboardingStep(9); } catch {}
     router.push('/(onboarding)/done');
   };
 

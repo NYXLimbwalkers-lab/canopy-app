@@ -12,7 +12,9 @@ export default function RegisterScreen() {
   const [companyName, setCompanyName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
   const [errors, setErrors] = useState<Record<string, string>>({});
+  const [emailSent, setEmailSent] = useState(false);
 
   const { signUp, isLoading } = useAuthStore();
 
@@ -24,6 +26,7 @@ export default function RegisterScreen() {
     else if (!/\S+@\S+\.\S+/.test(email)) e.email = 'Enter a valid email';
     if (!password) e.password = 'Password is required';
     else if (password.length < 8) e.password = 'At least 8 characters';
+    if (confirmPassword !== password) e.confirmPassword = 'Passwords do not match';
     setErrors(e);
     return Object.keys(e).length === 0;
   };
@@ -37,8 +40,26 @@ export default function RegisterScreen() {
       companyName.trim()
     );
     if (error) Alert.alert('Sign up failed', error);
-    // Auth store listener + root layout will handle navigation to onboarding
+    else setEmailSent(true);
   };
+
+  if (emailSent) {
+    return (
+      <View style={styles.container}>
+        <View style={styles.emailSentContainer}>
+          <Text style={styles.emailSentIcon}>📬</Text>
+          <Text style={styles.emailSentTitle}>Check your email</Text>
+          <Text style={styles.emailSentBody}>
+            We sent a confirmation link to{'\n'}<Text style={styles.emailSentEmail}>{email}</Text>
+          </Text>
+          <Text style={styles.emailSentHint}>Click the link in the email to activate your account and start your free trial.</Text>
+          <TouchableOpacity onPress={() => router.back()} style={styles.backToLoginBtn}>
+            <Text style={styles.backToLoginText}>Back to sign in</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+    );
+  }
 
   return (
     <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
@@ -56,6 +77,7 @@ export default function RegisterScreen() {
           <Input label="Company name" value={companyName} onChangeText={setCompanyName} placeholder="Smith Tree Service" error={errors.companyName} />
           <Input label="Email address" value={email} onChangeText={setEmail} placeholder="jane@smithtrees.com" keyboardType="email-address" autoCapitalize="none" autoComplete="email" error={errors.email} />
           <Input label="Password" value={password} onChangeText={setPassword} placeholder="Min. 8 characters" secureTextEntry autoComplete="new-password" error={errors.password} />
+          <Input label="Confirm password" value={confirmPassword} onChangeText={setConfirmPassword} placeholder="Re-enter your password" secureTextEntry error={errors.confirmPassword} />
 
           <Button label="Start free trial →" onPress={handleRegister} loading={isLoading} size="lg" style={{ marginTop: 8 }} />
 
@@ -86,4 +108,12 @@ const styles = StyleSheet.create({
   footer: { flexDirection: 'row', justifyContent: 'center', marginTop: 24, paddingBottom: 32 },
   footerText: { color: Colors.textSecondary, fontSize: Theme.font.size.body },
   footerLink: { color: Colors.primary, fontSize: Theme.font.size.body, fontWeight: Theme.font.weight.semibold },
+  emailSentContainer: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 32, gap: 16 },
+  emailSentIcon: { fontSize: 64 },
+  emailSentTitle: { fontSize: Theme.font.size.headline, fontWeight: Theme.font.weight.heavy, color: Colors.text },
+  emailSentBody: { fontSize: Theme.font.size.body, color: Colors.textSecondary, textAlign: 'center', lineHeight: 24 },
+  emailSentEmail: { color: Colors.primary, fontWeight: Theme.font.weight.semibold },
+  emailSentHint: { fontSize: Theme.font.size.small, color: Colors.textTertiary, textAlign: 'center', lineHeight: 20 },
+  backToLoginBtn: { marginTop: 8, backgroundColor: Colors.primary, paddingHorizontal: 32, paddingVertical: 14, borderRadius: Theme.radius.lg },
+  backToLoginText: { color: Colors.textInverse, fontWeight: Theme.font.weight.semibold, fontSize: Theme.font.size.body },
 });

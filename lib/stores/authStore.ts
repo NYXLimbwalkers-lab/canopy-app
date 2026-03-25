@@ -129,20 +129,24 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     const user = get().user;
     if (!user) return;
 
-    const [{ data: profile }, { data: company }] = await Promise.all([
-      supabase.from('users').select('*').eq('id', user.id).single(),
-      supabase
-        .from('companies')
-        .select('*')
-        .eq('id',
-          // Will be populated after we get profile
-          (await supabase.from('users').select('company_id').eq('id', user.id).single()).data?.company_id ?? ''
-        )
-        .single(),
-    ]);
+    // Fetch user profile first to get company_id, then fetch company
+    const { data: profile } = await supabase
+      .from('users')
+      .select('*')
+      .eq('id', user.id)
+      .single();
 
-    if (profile) set({ profile });
-    if (company) set({ company });
+    if (profile) {
+      set({ profile });
+      if (profile.company_id) {
+        const { data: company } = await supabase
+          .from('companies')
+          .select('*')
+          .eq('id', profile.company_id)
+          .single();
+        if (company) set({ company });
+      }
+    }
   },
 
   updateCompany: async (updates) => {
