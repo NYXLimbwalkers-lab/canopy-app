@@ -7,6 +7,7 @@ import {
   RefreshControl,
   TouchableOpacity,
   ActivityIndicator,
+  Alert,
   Modal,
   KeyboardAvoidingView,
   Platform,
@@ -163,9 +164,9 @@ export default function AdsScreen() {
     setCampaigns(campaignRes.data ?? []);
     const mappedConnections: AdConnection[] = (connectionRes.data ?? []).map(a => ({
       platform: a.platform as Platform,
-      connected: true,
+      connected: a.connected ?? true,
       account_id: a.account_id,
-      account_name: null,
+      account_name: a.account_name ?? null,
     }));
     setConnections(mappedConnections);
   }, [company]);

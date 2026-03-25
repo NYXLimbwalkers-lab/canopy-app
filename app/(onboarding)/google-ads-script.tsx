@@ -22,6 +22,7 @@ export default function GoogleAdsScriptStep() {
           company_id: company.id,
           platform: 'google',
           account_id: customerId.replace(/-/g, '').trim(),
+          connected: true,
         }, { onConflict: 'company_id,platform' });
       }
       await updateOnboardingStep(7);

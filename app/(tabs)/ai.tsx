@@ -736,7 +736,7 @@ export default function AIExpertScreen() {
     try {
       const { data: leads } = await supabase
         .from('leads')
-        .select('id, name, service_needed, notes, source, created_at')
+        .select('id, name, service, notes, source, created_at')
         .eq('company_id', company.id)
         .order('created_at', { ascending: false })
         .limit(5);
@@ -763,7 +763,7 @@ export default function AIExpertScreen() {
         leads.map(lead =>
           scoreAndSuggestFollowUp(ctx, {
             name: lead.name ?? 'Unknown',
-            service: lead.service_needed,
+            service: lead.service,
             notes: lead.notes,
             source: lead.source,
             createdAt: lead.created_at,

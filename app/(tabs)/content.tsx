@@ -39,7 +39,7 @@ interface ContentPost {
   video_type: string | null;
   platform: string;
   scheduled_at: string | null;
-  published_at: string | null;
+  posted_at: string | null;
   status: 'draft' | 'scheduled' | 'posted' | 'failed';
   script: string | null;
 }
