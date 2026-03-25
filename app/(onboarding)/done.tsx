@@ -67,7 +67,7 @@ export default function DoneStep() {
       <Button label="Go to my dashboard →" onPress={handleGoToDashboard} size="lg" />
 
       <Text style={styles.trialNote}>
-        Your 14-day free trial started today. No charges until {
+        Your 7-day free trial started today. No charges until {
           new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toLocaleDateString('en-US', { month: 'long', day: 'numeric' })
         }.
       </Text>

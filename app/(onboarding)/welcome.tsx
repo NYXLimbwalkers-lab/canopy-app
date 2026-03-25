@@ -42,7 +42,7 @@ export default function WelcomeStep() {
 
       <View style={styles.footer}>
         <Button label="Let's go →" onPress={handleNext} size="lg" />
-        <Text style={styles.trial}>14-day free trial · No credit card needed</Text>
+        <Text style={styles.trial}>7-day free trial · No credit card needed</Text>
       </View>
     </View>
   );

@@ -69,7 +69,7 @@ export default function RegisterScreen() {
         <View style={styles.header}>
           <Text style={styles.logo}>🌳</Text>
           <Text style={styles.appName}>Canopy</Text>
-          <Text style={styles.tagline}>14-day free trial. No credit card required.</Text>
+          <Text style={styles.tagline}>7-day free trial. No credit card required.</Text>
         </View>
 
         <View style={styles.form}>

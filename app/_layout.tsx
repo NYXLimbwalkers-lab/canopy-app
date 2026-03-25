@@ -1,6 +1,6 @@
 import 'react-native-url-polyfill/auto';
 import { useEffect } from 'react';
-import { Stack, router } from 'expo-router';
+import { Stack, router, useSegments } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
 import { useAuthStore } from '@/lib/stores/authStore';
 import { isSupabaseConfigured } from '@/lib/supabase';
@@ -15,6 +15,7 @@ export const unstable_settings = {
 
 export default function RootLayout() {
   const { initialize, isInitialized, session, company } = useAuthStore();
+  const segments = useSegments();
 
   useEffect(() => {
     initialize().then(() => {
@@ -26,17 +27,20 @@ export default function RootLayout() {
     if (!isInitialized) return;
 
     if (!isSupabaseConfigured) {
-      // Dev mode — no env vars set. Show the login screen with a setup notice.
       router.replace('/(auth)/login');
       return;
     }
 
+    const inAuth       = segments[0] === '(auth)';
+    const inOnboarding = segments[0] === '(onboarding)';
+
     if (!session) {
-      router.replace('/(auth)/login');
+      if (!inAuth) router.replace('/(auth)/login');
     } else if (company && !company.onboarding_completed_at) {
-      router.replace('/(onboarding)/welcome');
-    } else {
-      router.replace('/(tabs)/');
+      // Only jump to welcome if not already somewhere inside onboarding
+      if (!inOnboarding) router.replace('/(onboarding)/welcome');
+    } else if (session) {
+      if (inAuth || inOnboarding) router.replace('/(tabs)/');
     }
   }, [isInitialized, session, company]);
 
