@@ -120,14 +120,7 @@ async function processVideo(
 ) {
   const elevenLabsKey = Deno.env.get('ELEVENLABS_API_KEY')
   const pexelsKey     = Deno.env.get('PEXELS_API_KEY')
-  const creatomateKey = Deno.env.get('CREATOMATE_API_KEY')
   const supabaseUrl   = Deno.env.get('SUPABASE_URL')!
-
-  if (!creatomateKey) {
-    throw new Error(
-      'CREATOMATE_API_KEY not set. Add it in Supabase Dashboard → Edge Functions → Secrets.',
-    )
-  }
 
   // Look up company name for watermark
   const { data: videoRow } = await supabase
@@ -210,136 +203,46 @@ async function processVideo(
     }
   }
 
-  // ── Step 3: Creatomate render ─────────────────────────────────────────────
-  const webhookUrl = `${supabaseUrl}/functions/v1/video-webhook`
+  // ── Step 3: FFmpeg render server ──────────────────────────────────────────
+  const renderServerUrl = Deno.env.get('RENDER_SERVER_URL')
+  if (!renderServerUrl) {
+    throw new Error('RENDER_SERVER_URL not set. Deploy the render server and add the URL to Edge Function Secrets.')
+  }
 
-  // Build composition elements
-  const elements: any[] = []
+  const webhookUrl = `${supabaseUrl}/functions/v1/video-webhook`
 
   // Estimate total duration from spoken text (~2.5 words/sec for natural pacing)
   const wordCount = spokenText.split(/\s+/).length
   const estimatedDuration = Math.max(20, Math.min(60, Math.round(wordCount / 2.5)))
 
-  if (videoClips.length > 0) {
-    // Distribute clips across the duration with crossfade transitions
-    const clipDuration = Math.round(estimatedDuration / videoClips.length)
-    videoClips.forEach((src, i) => {
-      const el: any = {
-        type: 'video',
-        source: src,
-        fit: 'cover',
-        track: 1,
-        duration: clipDuration,
-        trim_start: 0,
-        trim_duration: clipDuration,
-      }
-      // Add crossfade between clips (not on first)
-      if (i > 0) {
-        el.transition = { type: 'crossfade', duration: 0.8 }
-      }
-      elements.push(el)
-    })
-  } else {
-    // Fallback: dark gradient background
-    elements.push({
-      type: 'rectangle',
-      width: '100%',
-      height: '100%',
-      x_anchor: '50%',
-      y_anchor: '50%',
-      fill_color: '#1A3326',
-      duration: estimatedDuration,
-      track: 1,
-    })
-  }
-
-  // Voiceover in track 2
-  if (audioUrl) {
-    elements.push({ type: 'audio', source: audioUrl, track: 2 })
-  }
-
-  // Caption overlays: split into timed segments like real TikTok captions
+  // Build caption segments with timing
   const segments = splitIntoCaptionSegments(spokenText)
   const segDuration = estimatedDuration / segments.length
 
-  segments.forEach((text, i) => {
-    elements.push({
-      type: 'text',
-      text: text.length > 80 ? text.slice(0, 77) + '...' : text,
-      time: i * segDuration,
-      duration: segDuration,
-      y: '72%',
-      width: '88%',
-      x_anchor: '50%',
-      y_anchor: '0%',
-      font_family: 'Montserrat',
-      font_size: '5.5 vmin',
-      font_weight: '800',
-      fill_color: '#FFFFFF',
-      stroke_color: '#000000',
-      stroke_width: '0.5 vmin',
-      text_align: 'center',
-      background_color: 'rgba(0,0,0,0.5)',
-      background_x_padding: '3 vmin',
-      background_y_padding: '2 vmin',
-      background_border_radius: '1.5 vmin',
-      enter: { type: 'text-appear', duration: 0.4 },
-      track: 3,
-    })
-  })
+  const captionSegments = segments.map((text, i) => ({
+    text: text.length > 80 ? text.slice(0, 77) + '...' : text,
+    startTime: i * segDuration,
+    duration: segDuration,
+  }))
 
-  // Company watermark — use actual company name
-  elements.push({
-    type: 'text',
-    text: `🌳 ${companyName}`,
-    x: '4%',
-    y: '4%',
-    x_anchor: '0%',
-    y_anchor: '0%',
-    font_family: 'Montserrat',
-    font_size: '3.2 vmin',
-    font_weight: '700',
-    fill_color: 'rgba(255,255,255,0.85)',
-    stroke_color: '#000000',
-    stroke_width: '0.25 vmin',
-    track: 4,
-  })
-
-  const composition = {
-    output_format: 'mp4',
-    width: 1080,
-    height: 1920, // 9:16 vertical — TikTok / Reels / Shorts
-    duration: estimatedDuration,
-    elements,
-  }
-
-  const renderResp = await fetch('https://api.creatomate.com/v1/renders', {
+  const renderResp = await fetch(`${renderServerUrl}/render`, {
     method: 'POST',
-    headers: {
-      Authorization: `Bearer ${creatomateKey}`,
-      'Content-Type': 'application/json',
-    },
+    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
-      source: composition,
-      webhook_url: webhookUrl,
-      metadata: JSON.stringify({ videoId }),
+      videoId,
+      audioUrl,
+      videoClips,
+      captionSegments,
+      watermarkText: companyName,
+      totalDuration: estimatedDuration,
+      webhookUrl,
+      supabaseUrl,
+      supabaseKey: Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,
     }),
   })
 
   if (!renderResp.ok) {
     const errText = await renderResp.text()
-    throw new Error(`Creatomate render request failed: ${errText}`)
-  }
-
-  const renderData = await renderResp.json()
-  const renderId: string | undefined = Array.isArray(renderData)
-    ? renderData[0]?.id
-    : renderData?.id
-
-  if (renderId) {
-    await supabase
-      .from('generated_videos')
-      .update({ creatomate_render_id: renderId })
-      .eq('id', videoId)
+    throw new Error(`Render server request failed: ${errText}`)
   }
 }
