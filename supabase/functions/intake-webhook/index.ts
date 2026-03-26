@@ -78,17 +78,18 @@ Deno.serve(async (req: Request) => {
       })
     }
 
-    // Validate API key — check against company_settings or a simple shared secret
-    const headerKey = req.headers.get('x-api-key') || apiKey
-    if (headerKey) {
-      const { data: settings } = await supabase
-        .from('company_settings')
-        .select('openrouter_key')
-        .eq('company_id', companyId)
-        .single()
+    // Validate that the company exists before creating a lead
+    const { data: companyExists } = await supabase
+      .from('companies')
+      .select('id')
+      .eq('id', companyId)
+      .single()
 
-      // Use openrouter_key as a simple API key validation (or skip if none set)
-      // In production, use a dedicated webhook_secret column
+    if (!companyExists) {
+      return new Response(JSON.stringify({ error: 'Invalid companyId' }), {
+        status: 404,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      })
     }
 
     // Validate source

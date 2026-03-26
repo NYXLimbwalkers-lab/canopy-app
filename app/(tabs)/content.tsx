@@ -12,6 +12,7 @@ import {
   Share,
   KeyboardAvoidingView,
   Platform,
+  Image,
 } from 'react-native';
 import { Input } from '@/components/ui/Input';
 import { Theme } from '@/constants/Theme';
@@ -409,11 +410,15 @@ function VideoGenerateModal({ visible, videoId, invokeError, onClose }: VideoGen
               <Text style={vg.readyTitle}>Your video is ready!</Text>
               <Text style={vg.readySubtitle}>Tap share to post it to your socials</Text>
 
-              {video?.thumbnail_url && (
+              {video?.video_url && (
                 <View style={vg.thumbnailWrap}>
-                  {/* Native Image not imported — show a placeholder card */}
-                  <View style={vg.thumbnailPlaceholder}>
-                    <Text style={vg.thumbnailIcon}>▶</Text>
+                  <Image
+                    source={{ uri: video.thumbnail_url || video.video_url }}
+                    style={{ width: '100%', height: 300, borderRadius: 12 }}
+                    resizeMode="cover"
+                  />
+                  <View style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, justifyContent: 'center', alignItems: 'center' }}>
+                    <Text style={{ fontSize: 48, opacity: 0.9 }}>▶</Text>
                   </View>
                 </View>
               )}
@@ -442,7 +447,7 @@ function VideoGenerateModal({ visible, videoId, invokeError, onClose }: VideoGen
 
               <View style={vg.keysCard}>
                 <Text style={vg.keysTitle}>Required API keys (Supabase → Edge Functions → Secrets):</Text>
-                {['ELEVENLABS_API_KEY', 'PEXELS_API_KEY', 'CREATOMATE_API_KEY'].map(k => (
+                {['ELEVENLABS_API_KEY', 'PEXELS_API_KEY', 'RENDER_SERVER_URL'].map(k => (
                   <Text key={k} style={vg.keyItem}>• {k}</Text>
                 ))}
               </View>
