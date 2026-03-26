@@ -120,15 +120,16 @@ Deno.serve(async (req: Request) => {
       const result = await resp.json()
 
       if (result.data) {
-        for (const ticket of result.data) {
+        for (let i = 0; i < result.data.length; i++) {
+          const ticket = result.data[i]
           if (ticket.status === 'ok') {
             totalSent++
           } else if (ticket.status === 'error') {
             errors.push(ticket.message || ticket.details?.error || 'Unknown error')
 
-            // Remove invalid tokens
+            // Remove invalid tokens — Expo returns tickets in the same order as messages
             if (ticket.details?.error === 'DeviceNotRegistered') {
-              const token = chunk.find(m => true)?.to // Simplified — in production, match by index
+              const token = chunk[i]?.to
               if (token) {
                 await supabase
                   .from('users')
