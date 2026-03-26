@@ -16,6 +16,7 @@ import {
 } from '@/lib/ai';
 import { useAuthStore } from '@/lib/stores/authStore';
 import { supabase } from '@/lib/supabase';
+import { crossAlert } from '@/lib/crossAlert';
 
 if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
   UIManager.setLayoutAnimationEnabledExperimental(true);
@@ -256,7 +257,7 @@ function AdCopyCard({ data }: { data: Array<{ headline: string; description: str
               onPress={() => {
                 const text = `${ad.headline}\n${ad.description}\n${ad.callToAction}`;
                 Clipboard.setStringAsync(text);
-                Alert.alert('Copied', 'Ad copy copied to clipboard');
+                crossAlert('Copied', 'Ad copy copied to clipboard');
               }}
             >
               <Text style={styles.copyBtnText}>Copy</Text>
@@ -305,7 +306,7 @@ function VideoScriptCard({ data }: { data: { hook: string; script: string; shotL
         onPress={() => {
           const text = `HOOK: ${data.hook}\n\nSCRIPT:\n${data.script}\n\nSHOT LIST:\n${data.shotList.map((s, i) => `${i + 1}. ${s}`).join('\n')}\n\nCAPTION: ${data.caption}\n\n${data.hashtags.join(' ')}`;
           Clipboard.setStringAsync(text);
-          Alert.alert('Copied', 'Full video script copied to clipboard');
+          crossAlert('Copied', 'Full video script copied to clipboard');
         }}
       >
         <Text style={styles.fullCopyBtnText}>Copy Full Script</Text>
@@ -337,7 +338,7 @@ function LeadScoresCard({ data }: { data: Array<{ name: string; score: number; r
               style={styles.copyBtn}
               onPress={() => {
                 Clipboard.setStringAsync(lead.followUpMessage);
-                Alert.alert('Copied', 'Follow-up message copied');
+                crossAlert('Copied', 'Follow-up message copied');
               }}
             >
               <Text style={styles.copyBtnText}>Copy Message</Text>
@@ -368,7 +369,7 @@ function ReviewResponseCard({ data }: { data: { reviewerName: string; rating: nu
         style={styles.fullCopyBtn}
         onPress={() => {
           Clipboard.setStringAsync(data.response);
-          Alert.alert('Copied', 'Review response copied to clipboard');
+          crossAlert('Copied', 'Review response copied to clipboard');
         }}
       >
         <Text style={styles.fullCopyBtnText}>Copy Response</Text>
@@ -412,7 +413,7 @@ function ContentCalendarCard({ data }: { data: Array<{ day: number; videoType: s
         onPress={() => {
           const text = data.map(p => `Day ${p.day} [${p.platform}] ${p.videoType}: "${p.hook}"`).join('\n');
           Clipboard.setStringAsync(text);
-          Alert.alert('Copied', 'Content calendar copied to clipboard');
+          crossAlert('Copied', 'Content calendar copied to clipboard');
         }}
       >
         <Text style={styles.fullCopyBtnText}>Copy Calendar</Text>
@@ -437,7 +438,7 @@ function MarketStrategyCard({ data }: { data: string[] }) {
         style={styles.fullCopyBtn}
         onPress={() => {
           Clipboard.setStringAsync(data.join('\n\n'));
-          Alert.alert('Copied', 'Strategy copied to clipboard');
+          crossAlert('Copied', 'Strategy copied to clipboard');
         }}
       >
         <Text style={styles.fullCopyBtnText}>Copy Strategy</Text>
@@ -615,6 +616,10 @@ export default function AIExpertScreen() {
   const generateId = () => `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 
   const handleActionAdCopy = async () => {
+    if (!isAIConfigured()) {
+      setMessages(prev => [...prev, { id: generateId(), role: 'assistant', content: `⚠️ AI is not configured yet. Go to **Settings → AI Configuration** and enter your OpenRouter API key. Get one free at openrouter.ai`, timestamp: Date.now() }]);
+      return;
+    }
     setLoading(true);
     const ctx = getCompanyContext();
     const service = ctx.services[0] ?? 'tree removal';
@@ -672,6 +677,17 @@ export default function AIExpertScreen() {
   };
 
   const handleActionVideoScript = async () => {
+    if (!isAIConfigured()) {
+      const errMsg: Message = {
+        id: generateId(),
+        role: 'assistant',
+        content: `⚠️ AI is not configured yet. Go to **Settings → AI Configuration** and enter your OpenRouter API key. You can get one free at openrouter.ai`,
+        timestamp: Date.now(),
+      };
+      setMessages(prev => [...prev, errMsg]);
+      return;
+    }
+
     setLoading(true);
     const ctx = getCompanyContext();
 
@@ -711,7 +727,7 @@ export default function AIExpertScreen() {
       const errMsg: Message = {
         id: generateId(),
         role: 'assistant',
-        content: `Error generating video script: ${e.message}`,
+        content: `⚠️ Error generating video script: ${e.message}\n\nMake sure your OpenRouter API key is valid in Settings → AI Configuration.`,
         timestamp: Date.now(),
       };
       setMessages(prev => [...prev, errMsg]);
@@ -887,6 +903,10 @@ export default function AIExpertScreen() {
   };
 
   const handleActionContentCalendar = async () => {
+    if (!isAIConfigured()) {
+      setMessages(prev => [...prev, { id: generateId(), role: 'assistant', content: `⚠️ AI is not configured yet. Go to **Settings → AI Configuration** and enter your OpenRouter API key. Get one free at openrouter.ai`, timestamp: Date.now() }]);
+      return;
+    }
     setLoading(true);
     const ctx = getCompanyContext();
     const month = new Date().getMonth();
@@ -935,6 +955,10 @@ export default function AIExpertScreen() {
   };
 
   const handleActionMarketStrategy = async () => {
+    if (!isAIConfigured()) {
+      setMessages(prev => [...prev, { id: generateId(), role: 'assistant', content: `⚠️ AI is not configured yet. Go to **Settings → AI Configuration** and enter your OpenRouter API key. Get one free at openrouter.ai`, timestamp: Date.now() }]);
+      return;
+    }
     setLoading(true);
     const ctx = getCompanyContext();
 
@@ -1072,15 +1096,15 @@ export default function AIExpertScreen() {
 
   const handleMessagePress = (msg: Message) => {
     if (msg.role === 'assistant') {
-      Alert.alert(
+      crossAlert(
         'Message Actions',
-        undefined,
+        '',
         [
           {
             text: 'Copy Text',
             onPress: () => {
               Clipboard.setStringAsync(msg.content);
-              Alert.alert('Copied', 'Message copied to clipboard');
+              crossAlert('Copied', 'Message copied to clipboard');
             },
           },
           { text: 'Cancel', style: 'cancel' },

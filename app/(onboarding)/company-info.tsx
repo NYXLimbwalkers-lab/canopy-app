@@ -1,11 +1,12 @@
 import React, { useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert, Platform } from 'react-native';
 import { router } from 'expo-router';
 import { Colors } from '@/constants/Colors';
 import { Theme } from '@/constants/Theme';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { useAuthStore } from '@/lib/stores/authStore';
+import { crossAlert } from '@/lib/crossAlert';
 
 const SERVICES = ['Tree Removal', 'Tree Trimming', 'Stump Grinding', 'Emergency Storm Response', 'Land Clearing', 'Cabling & Bracing', 'Tree Health Assessment', 'Lot Clearing'];
 const RADII = [10, 15, 25, 35, 50, 75];
@@ -27,11 +28,11 @@ export default function CompanyInfoStep() {
 
   const handleNext = async () => {
     if (!name.trim() || !phone.trim() || !city.trim()) {
-      Alert.alert('Required', 'Please fill in company name, phone, and city.');
+      crossAlert('Required', 'Please fill in company name, phone, and city.');
       return;
     }
     if (services.length === 0) {
-      Alert.alert('Required', 'Select at least one service you offer.');
+      crossAlert('Required', 'Select at least one service you offer.');
       return;
     }
     setLoading(true);
@@ -46,7 +47,7 @@ export default function CompanyInfoStep() {
       services_offered: services,
     });
     setLoading(false);
-    if (error) { Alert.alert('Error', error); return; }
+    if (error) { crossAlert('Error', error); return; }
     await updateOnboardingStep(3);
     router.push('/(onboarding)/connect-google');
   };

@@ -22,14 +22,15 @@ import { EmptyState } from '@/components/ui/EmptyState';
 import { ScoreCard } from '@/components/ui/ScoreCard';
 import { useAuthStore } from '@/lib/stores/authStore';
 import { supabase } from '@/lib/supabase';
+import { crossAlert } from '@/lib/crossAlert';
 
-type Platform = 'google' | 'facebook' | 'other';
+type AdPlatform = 'google' | 'facebook' | 'other';
 type CampaignStatus = 'active' | 'paused' | 'ended' | 'draft';
 
 interface Campaign {
   id: string;
   name: string;
-  platform: Platform;
+  platform: AdPlatform;
   status: CampaignStatus;
   spend_total: number;
   leads_generated: number;
@@ -38,19 +39,19 @@ interface Campaign {
 }
 
 interface AdConnection {
-  platform: Platform;
+  platform: AdPlatform;
   connected: boolean;
   account_id: string | null;
   account_name: string | null;
 }
 
-const PLATFORM_ICONS: Record<Platform, string> = {
+const PLATFORM_ICONS: Record<AdPlatform, string> = {
   google: '🔵',
   facebook: '📘',
   other: '📣',
 };
 
-const PLATFORM_NAMES: Record<Platform, string> = {
+const PLATFORM_NAMES: Record<AdPlatform, string> = {
   google: 'Google Ads',
   facebook: 'Facebook Ads',
   other: 'Other',
@@ -74,10 +75,10 @@ function PlatformSection({
   campaigns,
   onConnect,
 }: {
-  platform: Platform;
+  platform: AdPlatform;
   connection: AdConnection | undefined;
   campaigns: Campaign[];
-  onConnect: (platform: Platform) => void;
+  onConnect: (platform: AdPlatform) => void;
 }) {
   const isConnected = connection?.connected ?? false;
   const platformCampaigns = campaigns.filter(c => c.platform === platform);
@@ -150,7 +151,7 @@ export default function AdsScreen() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [connectModal, setConnectModal] = useState(false);
-  const [connectingPlatform, setConnectingPlatform] = useState<Platform | null>(null);
+  const [connectingPlatform, setConnectingPlatform] = useState<AdPlatform | null>(null);
   const [accountInput, setAccountInput] = useState('');
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
@@ -163,7 +164,7 @@ export default function AdsScreen() {
     ]);
     setCampaigns(campaignRes.data ?? []);
     const mappedConnections: AdConnection[] = (connectionRes.data ?? []).map(a => ({
-      platform: a.platform as Platform,
+      platform: a.platform as AdPlatform,
       connected: a.connected ?? true,
       account_id: a.account_id,
       account_name: a.account_name ?? null,
@@ -181,7 +182,7 @@ export default function AdsScreen() {
     fetchData().finally(() => setLoading(false));
   }, [fetchData]);
 
-  const handleConnect = (platform: Platform) => {
+  const handleConnect = (platform: AdPlatform) => {
     setConnectingPlatform(platform);
     setAccountInput('');
     setSaveError(null);
@@ -215,14 +216,14 @@ export default function AdsScreen() {
   };
 
   const handleNewCampaign = () => {
-    Alert.alert(
+    crossAlert(
       'Add Campaign',
       'Campaign creation is managed through your Google Ads or Facebook Ads account. Connect your ad account above to automatically import your campaigns.',
       [{ text: 'OK' }]
     );
   };
 
-  const getConnection = (platform: Platform) => connections.find(c => c.platform === platform);
+  const getConnection = (platform: AdPlatform) => connections.find(c => c.platform === platform);
 
   const activeCampaigns = campaigns.filter(c => c.status === 'active');
   const totalSpend = campaigns.reduce((s, c) => s + c.spend_total, 0);

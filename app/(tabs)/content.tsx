@@ -582,19 +582,28 @@ export default function ContentScreen() {
         },
         body: JSON.stringify({
           model: 'anthropic/claude-3-haiku',
-          messages: [{
-            role: 'user',
-            content: `Write a 30-60 second TikTok/Instagram Reel script for a tree service company called "${company.name}" in ${company.city ?? 'their area'}.
+          messages: [
+            {
+              role: 'system',
+              content: `You write viral TikTok scripts that sound like a real person talking — not a commercial. Use contractions, natural pauses, filler words like "honestly" and "look". Think popular blue-collar TikTok creators. Never sound corporate.`,
+            },
+            {
+              role: 'user',
+              content: `Write a "${videoTypeLabel}" TikTok script for ${company.name} in ${company.city ?? 'their area'}.
 
-Video type: ${videoTypeLabel}
+Rules:
+- Start with a scroll-stopping hook (under 10 words, curiosity or shock)
+- Write ONLY the spoken words — no [SHOT] markers or stage directions
+- 80-120 words total (30-45 seconds when spoken naturally)
+- Sound like you're talking to a friend, not reading a script
+- End with a natural, soft call to action
 
-Format the script with:
-- Hook (first 3 seconds — must grab attention)
-- Main content (what to show/say)
-- Call to action (end with what to do next)
-
-Keep it conversational, authentic, and specific to tree service. Include [ACTION] notes for what to film. Under 150 words total.`,
-          }],
+Format:
+HOOK: (the first line)
+---
+(rest of the script as natural speech)`,
+            },
+          ],
           max_tokens: 300,
         }),
       });

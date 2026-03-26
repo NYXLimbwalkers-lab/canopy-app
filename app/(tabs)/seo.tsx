@@ -258,17 +258,87 @@ Keep it under 50 words. Be genuine, thank them by name, and invite them back or 
   const saveGbpConnection = async () => {
     if (!company) return;
     setGbpSaving(true);
+
+    // Calculate a real completeness score from available company data
+    let score = 0;
+    if (company.name) score += 15;
+    if (company.phone) score += 15;
+    if (company.address || (company.city && company.state)) score += 15;
+    if (gbpUrl.trim()) score += 15;
+    if (company.services_offered && company.services_offered.length > 0) score += 10;
+    if (company.website) score += 10;
+    // Hours and photos are harder to auto-fill, give partial credit
+    score += 5; // assume basic hours set
+    // Cap at 85 without photos/hours fully verified
+    score = Math.min(score, 85);
+
     await supabase
       .from('gbp_profiles')
       .upsert(
         {
           company_id: company.id,
           name: company.name,
-          website: gbpUrl.trim() || null,
+          phone: company.phone || null,
+          address: company.address || (company.city && company.state ? `${company.city}, ${company.state}` : null),
+          website: gbpUrl.trim() || company.website || null,
+          completeness_score: score,
           last_synced_at: new Date().toISOString(),
         },
         { onConflict: 'company_id' }
       );
+
+    // Auto-seed keyword rankings based on company services + city
+    if (company.services_offered && company.services_offered.length > 0 && company.city) {
+      const cityLower = company.city.toLowerCase();
+      const existingKw = await supabase
+        .from('keyword_rankings')
+        .select('keyword')
+        .eq('company_id', company.id);
+
+      if (!existingKw.data || existingKw.data.length === 0) {
+        const keywordSeeds = company.services_offered.slice(0, 5).flatMap(service => [
+          `${service.toLowerCase()} ${cityLower}`,
+          `${service.toLowerCase()} near me`,
+        ]);
+        // Add some generic ones
+        keywordSeeds.push(`tree service ${cityLower}`, `arborist ${cityLower}`, `emergency tree removal ${cityLower}`);
+
+        // Remove duplicates
+        const unique = [...new Set(keywordSeeds)];
+
+        const inserts = unique.map(keyword => ({
+          company_id: company.id,
+          keyword,
+          position: null, // We don't fake positions — they start as unranked
+          previous_position: null,
+          checked_at: new Date().toISOString(),
+        }));
+
+        await supabase.from('keyword_rankings').insert(inserts);
+      }
+    }
+
+    // Auto-seed common citation directories if none exist
+    const existingCitations = await supabase
+      .from('citations')
+      .select('id')
+      .eq('company_id', company.id);
+
+    if (!existingCitations.data || existingCitations.data.length === 0) {
+      const citationSeeds = [
+        { directory_name: 'Google Business Profile', status: 'claimed', url: gbpUrl.trim() || null },
+        { directory_name: 'Yelp', status: 'unclaimed', url: null },
+        { directory_name: 'BBB', status: 'unclaimed', url: null },
+        { directory_name: 'Angi (Angie\'s List)', status: 'unclaimed', url: null },
+        { directory_name: 'HomeAdvisor', status: 'unclaimed', url: null },
+        { directory_name: 'Facebook Business', status: 'unclaimed', url: null },
+        { directory_name: 'Thumbtack', status: 'unclaimed', url: null },
+        { directory_name: 'Nextdoor', status: 'unclaimed', url: null },
+      ].map(c => ({ ...c, company_id: company.id }));
+
+      await supabase.from('citations').insert(citationSeeds);
+    }
+
     setGbpSaving(false);
     setGbpSaveSuccess(true);
     await fetchData();

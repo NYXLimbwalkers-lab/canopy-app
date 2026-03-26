@@ -1,11 +1,12 @@
 import React, { useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, Alert } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, Alert, Platform } from 'react-native';
 import { router } from 'expo-router';
 import { Colors } from '@/constants/Colors';
 import { Theme } from '@/constants/Theme';
 import { Button } from '@/components/ui/Button';
 import { useAuthStore } from '@/lib/stores/authStore';
 import { supabase } from '@/lib/supabase';
+import { crossAlert } from '@/lib/crossAlert';
 
 export default function FirstCampaignStep() {
   const { company, updateOnboardingStep } = useAuthStore();
@@ -38,7 +39,7 @@ export default function FirstCampaignStep() {
       try { await updateOnboardingStep(9); } catch {}
       router.push('/(onboarding)/done');
     } catch (err: any) {
-      Alert.alert('Error', err.message ?? 'Failed to create campaign.');
+      crossAlert('Error', err.message ?? 'Failed to create campaign.');
     } finally {
       setLoading(false);
     }

@@ -12,6 +12,7 @@ import {
   Platform,
   Modal,
 } from 'react-native';
+
 import { router } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import Constants from 'expo-constants';
@@ -20,6 +21,7 @@ import { Theme } from '@/constants/Theme';
 import { useAuthStore } from '@/lib/stores/authStore';
 import { supabase } from '@/lib/supabase';
 import { trialDaysRemaining, PLANS } from '@/lib/cashapp';
+import { crossAlert } from '@/lib/crossAlert';
 
 const AI_KEY_STORAGE = 'EXPO_PUBLIC_OPENROUTER_API_KEY';
 const AI_MODEL_STORAGE = 'CANOPY_AI_MODEL_PREF';
@@ -173,7 +175,7 @@ export default function SettingsScreen() {
       }
 
       if (errors.length > 0) {
-        Alert.alert('Save failed', errors.join('\n'));
+        crossAlert('Save failed', errors.join('\n'));
         return;
       }
 
@@ -204,9 +206,9 @@ export default function SettingsScreen() {
     try {
       await AsyncStorage.setItem(AI_KEY_STORAGE, openRouterKey.trim());
       await AsyncStorage.setItem(AI_MODEL_STORAGE, aiModel);
-      Alert.alert('Saved', 'AI configuration saved.');
+      crossAlert('Saved', 'AI configuration saved.');
     } catch {
-      Alert.alert('Error', 'Failed to save AI configuration.');
+      crossAlert('Error', 'Failed to save AI configuration.');
     } finally {
       setSavingAI(false);
     }
@@ -226,7 +228,7 @@ export default function SettingsScreen() {
           connected: true,
         });
         if (error) {
-          Alert.alert('Error', error.message);
+          crossAlert('Error', error.message);
           return;
         }
       } else {
@@ -237,11 +239,11 @@ export default function SettingsScreen() {
           connected: true,
         });
         if (error) {
-          Alert.alert('Error', error.message);
+          crossAlert('Error', error.message);
           return;
         }
       }
-      Alert.alert('Connected', `${connectModal.label} connected successfully.`);
+      crossAlert('Connected', `${connectModal.label} connected successfully.`);
       setConnectModal({ visible: false, platform: '', type: 'ad', label: '' });
       setConnectInput('');
       await fetchConnections();
@@ -253,7 +255,7 @@ export default function SettingsScreen() {
   // Disconnect an account
   const handleDisconnect = useCallback(
     (type: 'ad' | 'social', id: string, label: string) => {
-      Alert.alert('Disconnect', `Remove ${label} connection?`, [
+      crossAlert('Disconnect', `Remove ${label} connection?`, [
         { text: 'Cancel', style: 'cancel' },
         {
           text: 'Disconnect',
@@ -270,7 +272,7 @@ export default function SettingsScreen() {
   );
 
   const handleSignOut = useCallback(() => {
-    Alert.alert('Sign out', 'Are you sure you want to sign out?', [
+    crossAlert('Sign out', 'Are you sure you want to sign out?', [
       { text: 'Cancel', style: 'cancel' },
       {
         text: 'Sign out',
@@ -282,7 +284,7 @@ export default function SettingsScreen() {
 
   const handleChangePassword = useCallback(async () => {
     if (!profile?.email) return;
-    Alert.alert(
+    crossAlert(
       'Change Password',
       'We will send a password reset link to your email address.',
       [
@@ -294,9 +296,9 @@ export default function SettingsScreen() {
               profile.email
             );
             if (error) {
-              Alert.alert('Error', error.message);
+              crossAlert('Error', error.message);
             } else {
-              Alert.alert('Sent', 'Check your email for the reset link.');
+              crossAlert('Sent', 'Check your email for the reset link.');
             }
           },
         },
@@ -305,7 +307,7 @@ export default function SettingsScreen() {
   }, [profile]);
 
   const handleDeleteAccount = useCallback(() => {
-    Alert.alert(
+    crossAlert(
       'Delete Account',
       'Account deletion is permanent and cannot be undone. All company data, leads, and ad configurations will be lost. Please contact support@canopy.app to proceed with account deletion.',
       [{ text: 'OK', style: 'cancel' }]

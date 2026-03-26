@@ -51,7 +51,14 @@ export default function LoginScreen() {
       else setMagicSent(true);
     } else {
       const { error } = await signIn(email.trim().toLowerCase(), password);
-      if (error) setSubmitError(error);
+      if (error) {
+        // Provide a more helpful error message for invalid credentials
+        if (error.toLowerCase().includes('invalid login credentials') || error.toLowerCase().includes('invalid_credentials')) {
+          setSubmitError('Wrong email or password. Try resetting your password below, or sign in with a magic link.');
+        } else {
+          setSubmitError(error);
+        }
+      }
     }
   };
 

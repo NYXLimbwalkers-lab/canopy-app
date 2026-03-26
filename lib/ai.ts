@@ -130,18 +130,27 @@ export async function generateVideoScript(
   const raw = await aiChat([
     {
       role: 'system',
-      content: `You write viral short-form video scripts for tree service companies. Scripts are 30-60 seconds. Always start with a scroll-stopping hook. Include shot-by-shot directions.`,
+      content: `You write viral TikTok/Reels scripts for blue-collar service companies. Your scripts sound like a real person talking to a friend — NOT a commercial. Use natural speech patterns: contractions, pauses ("..."), filler phrases ("honestly", "look", "here's the thing"), and spoken rhythm. Never sound corporate or salesy. Think popular TikTok creators who happen to do tree work.
+
+Key rules:
+- Hook MUST stop the scroll in under 3 seconds (controversy, shock, curiosity gap)
+- Write the SPOKEN words only — no stage directions in the script itself
+- Keep it 80-120 words spoken (about 30-45 seconds at natural pace)
+- End with a soft CTA that feels natural, not pushy
+- Match the energy to the video type (satisfying = calm awe, storm = urgency, price = straight talk)`,
     },
     {
       role: 'user',
-      content: `Write a "${videoType}" video script for ${company.name} in ${company.city ?? 'their area'}.
+      content: `Write a "${videoType}" script for ${company.name} in ${company.city ?? 'their area'}.
 Details: ${JSON.stringify(details)}
-Return JSON only: {
-  "hook": "first 3 seconds spoken line",
-  "script": "full 30-60 second script with [SHOT] markers",
-  "shotList": ["shot 1 description", "shot 2 description", ...],
-  "hashtags": ["#tag1", "#tag2", ...8 hashtags total],
-  "caption": "platform caption under 150 chars"
+
+Return JSON only:
+{
+  "hook": "the first spoken line (scroll-stopper, under 10 words)",
+  "script": "the full spoken script — conversational, NO shot markers, NO brackets, just what the person says out loud",
+  "shotList": ["shot 1 visual description", "shot 2 visual description", ...up to 5 shots],
+  "hashtags": ["#tag1", "#tag2", ...8 hashtags mixing niche + trending],
+  "caption": "platform caption under 150 chars with 1-2 emoji"
 }`,
     },
   ], { model: 'claude', maxTokens: 800, temperature: 0.9 });
@@ -151,11 +160,11 @@ Return JSON only: {
     if (match) return JSON.parse(match[0]);
   } catch {}
   return {
-    hook: `You won't believe what we found in this yard...`,
-    script: `[WIDE SHOT] Pan across the job site...\n[CLOSE UP] Show the problem tree...\n[ACTION] Crew begins removal...\n[REVEAL] Clean yard after completion.`,
-    shotList: ['Wide establishing shot of yard', 'Close-up of problem tree', 'Crew at work (action)', 'Final reveal'],
+    hook: `This tree was about to fall on their house...`,
+    script: `This tree was about to fall on their house and they had no idea. Look at this — see how it's leaning? The whole root system is compromised. Honestly, another bad storm and this thing's coming down right on their bedroom. We got the crane out here, took it down section by section. Took us about four hours but... look at that yard now. Night and day difference. If you've got a tree that looks sketchy, don't wait. Give us a call, we'll come take a look for free.`,
+    shotList: ['Dramatic angle of leaning tree near house', 'Close-up of damaged root system', 'Crane operation removing sections', 'Time-lapse of removal process', 'Clean yard final reveal'],
     hashtags: [`#treeservice`, `#${company.city?.toLowerCase().replace(/\s/g,'')}`, '#treeremoval', '#arborist', '#treework', '#satisfying', '#beforeandafter', '#localbusiness'],
-    caption: `${company.name} getting the job done 🌳 Free estimates available!`,
+    caption: `${company.name} saved this house 🌳 Free estimates — link in bio`,
   };
 }
 
