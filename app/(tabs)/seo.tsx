@@ -155,6 +155,7 @@ export default function SeoScreen() {
   const [gbpSaving, setGbpSaving] = useState(false);
   const [gbpSaveSuccess, setGbpSaveSuccess] = useState(false);
   const [syncingReviews, setSyncingReviews] = useState(false);
+  const [syncingRankings, setSyncingRankings] = useState(false);
 
   const syncReviews = async () => {
     if (!company || syncingReviews) return;
@@ -181,6 +182,34 @@ export default function SeoScreen() {
       Alert.alert('Error', err.message || 'Failed to sync reviews');
     } finally {
       setSyncingReviews(false);
+    }
+  };
+
+  const syncRankings = async () => {
+    if (!company || syncingRankings) return;
+    setSyncingRankings(true);
+    try {
+      const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL;
+      const supabaseKey = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY;
+      const resp = await fetch(`${supabaseUrl}/functions/v1/sync-rankings`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${supabaseKey}`,
+        },
+        body: JSON.stringify({ companyId: company.id }),
+      });
+      const result = await resp.json();
+      if (result.error) {
+        Alert.alert('Sync Error', result.error);
+      } else {
+        Alert.alert('Rankings Updated', `Checked ${result.keywordsUpdated} keywords.`);
+        await fetchData();
+      }
+    } catch (err: any) {
+      Alert.alert('Error', err.message || 'Failed to sync rankings');
+    } finally {
+      setSyncingRankings(false);
     }
   };
 
@@ -480,7 +509,20 @@ Keep it under 50 words. Be genuine, thank them by name, and invite them back or 
       )}
 
       {/* Keyword rankings */}
-      <Text style={styles.sectionTitle}>Keyword Rankings</Text>
+      <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+        <Text style={styles.sectionTitle}>Keyword Rankings</Text>
+        {keywords.length > 0 && (
+          <TouchableOpacity
+            style={{ backgroundColor: Colors.primary, paddingHorizontal: 12, paddingVertical: 6, borderRadius: 8, opacity: syncingRankings ? 0.6 : 1 }}
+            onPress={syncRankings}
+            disabled={syncingRankings}
+          >
+            <Text style={{ color: '#fff', fontSize: 13, fontWeight: '600' }}>
+              {syncingRankings ? 'Checking...' : '📊 Check Rankings'}
+            </Text>
+          </TouchableOpacity>
+        )}
+      </View>
       {loading ? (
         <ActivityIndicator color={Colors.primary} />
       ) : keywords.length === 0 ? (
