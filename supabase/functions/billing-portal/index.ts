@@ -41,7 +41,7 @@ Deno.serve(async (req: Request) => {
       httpClient: Stripe.createFetchHttpClient(),
     })
 
-    const appUrl = Deno.env.get('APP_URL') ?? 'https://app.canopy.com'
+    const appUrl = Deno.env.get('APP_URL') ?? 'https://canopy-app-ten.vercel.app'
 
     const session = await stripe.billingPortal.sessions.create({
       customer: customerId,
