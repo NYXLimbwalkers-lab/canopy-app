@@ -1,6 +1,6 @@
-// sync-rankings — Checks keyword rankings using Google Custom Search API
-// Falls back to Places API text search if Custom Search isn't configured
-// Env vars: GOOGLE_PLACES_API_KEY, GOOGLE_CSE_ID, SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY
+// sync-rankings — Checks keyword rankings using Google Places API text search
+// This checks local/map pack rankings for service-area businesses
+// Env vars: GOOGLE_PLACES_API_KEY, SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 
@@ -10,105 +10,72 @@ const corsHeaders = {
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
 }
 
-// Check ranking via Google Custom Search JSON API (searches actual Google web results)
-async function checkRankingViaCustomSearch(
-  keyword: string,
-  companyName: string,
-  companyDomain: string | null,
-  companyPhone: string | null,
-  apiKey: string,
-  cseId: string,
-): Promise<number | null> {
-  // Search first 20 results (2 pages of 10)
-  for (let start = 1; start <= 11; start += 10) {
-    const params = new URLSearchParams({
-      key: apiKey,
-      cx: cseId,
-      q: keyword,
-      start: String(start),
-      num: '10',
-    })
-
-    const resp = await fetch(`https://www.googleapis.com/customsearch/v1?${params}`)
-    if (!resp.ok) continue
-
-    const data = await resp.json()
-    const items = data.items ?? []
-    const nameLower = companyName.toLowerCase()
-    const nameWords = nameLower.split(/\s+/).filter((w: string) => w.length > 3)
-
-    for (let i = 0; i < items.length; i++) {
-      const item = items[i]
-      const title = (item.title || '').toLowerCase()
-      const snippet = (item.snippet || '').toLowerCase()
-      const link = (item.link || '').toLowerCase()
-
-      // Match by domain
-      if (companyDomain && link.includes(companyDomain)) {
-        return start + i
-      }
-
-      // Match by company name in title or snippet
-      if (title.includes(nameLower) || snippet.includes(nameLower)) {
-        return start + i
-      }
-
-      // Match by phone number
-      if (companyPhone) {
-        const phoneDigits = companyPhone.replace(/\D/g, '')
-        const formatted1 = `(${phoneDigits.slice(0,3)}) ${phoneDigits.slice(3,6)}-${phoneDigits.slice(6)}`
-        const formatted2 = `${phoneDigits.slice(0,3)}-${phoneDigits.slice(3,6)}-${phoneDigits.slice(6)}`
-        if (snippet.includes(phoneDigits) || snippet.includes(formatted1) || snippet.includes(formatted2)) {
-          return start + i
-        }
-      }
-
-      // Fuzzy match — at least 2 significant words from company name
-      const matchingWords = nameWords.filter((w: string) => title.includes(w) || snippet.includes(w))
-      if (matchingWords.length >= 2) {
-        return start + i
-      }
-    }
-  }
-
-  return null // Not found in top 20
-}
-
-// Fallback: Check ranking via Places API text search (local map pack)
+// Check ranking via Places API text search (local map pack results)
 async function checkRankingViaPlaces(
   keyword: string,
   companyName: string,
   companyCity: string | null,
+  companyState: string | null,
+  companyPhone: string | null,
   apiKey: string,
-): Promise<number | null> {
+): Promise<{ position: number | null; totalResults: number }> {
+  // Add location context to keyword if not already present
+  let query = keyword
+  const keywordLower = keyword.toLowerCase()
+  const hasLocation = companyCity && keywordLower.includes(companyCity.toLowerCase())
+  const hasNearMe = keywordLower.includes('near me')
+
+  // For "near me" queries, replace with actual city/state
+  if (hasNearMe && companyCity) {
+    query = keyword.replace(/near me/i, `${companyCity}${companyState ? ` ${companyState}` : ''}`)
+  } else if (!hasLocation && !hasNearMe && companyCity) {
+    // Already has city in keyword, use as-is
+  }
+
   const resp = await fetch(
-    `https://maps.googleapis.com/maps/api/place/textsearch/json?query=${encodeURIComponent(keyword)}&key=${apiKey}`
+    `https://maps.googleapis.com/maps/api/place/textsearch/json?query=${encodeURIComponent(query)}&key=${apiKey}`
   )
-  if (!resp.ok) return null
+  if (!resp.ok) return { position: null, totalResults: 0 }
 
   const data = await resp.json()
   const results = data.results ?? []
+  if (!results.length) return { position: null, totalResults: 0 }
+
   const nameLower = companyName.toLowerCase()
   const nameWords = nameLower.split(/\s+/).filter((w: string) => w.length > 3)
+  const phoneDigits = companyPhone?.replace(/\D/g, '') || ''
 
   for (let i = 0; i < results.length; i++) {
-    const name = (results[i].name || '').toLowerCase()
-    const addr = (results[i].formatted_address || '').toLowerCase()
+    const result = results[i]
+    const name = (result.name || '').toLowerCase()
+    const addr = (result.formatted_address || '').toLowerCase()
+    const placePhone = (result.formatted_phone_number || '').replace(/\D/g, '')
 
+    // Exact name match
     if (name.includes(nameLower) || nameLower.includes(name)) {
-      return i + 1
+      return { position: i + 1, totalResults: results.length }
     }
 
-    // Fuzzy match with city
+    // Phone number match
+    if (phoneDigits && phoneDigits.length >= 10 && placePhone.includes(phoneDigits.slice(-10))) {
+      return { position: i + 1, totalResults: results.length }
+    }
+
+    // Fuzzy match — at least 2 significant words from company name
+    const matchingWords = nameWords.filter((w: string) => name.includes(w))
+    if (matchingWords.length >= 2) {
+      return { position: i + 1, totalResults: results.length }
+    }
+
+    // Fuzzy match with city context
     if (companyCity && addr.includes(companyCity.toLowerCase())) {
-      const matchingWords = nameWords.filter((w: string) => name.includes(w))
-      if (matchingWords.length >= 2) {
-        return i + 1
+      if (matchingWords.length >= 1 && nameWords.length <= 2) {
+        return { position: i + 1, totalResults: results.length }
       }
     }
   }
 
-  return null
+  return { position: null, totalResults: results.length }
 }
 
 Deno.serve(async (req: Request) => {
@@ -164,32 +131,13 @@ Deno.serve(async (req: Request) => {
       })
     }
 
-    const cseId = Deno.env.get('GOOGLE_CSE_ID')
-
-    const companyDomain = company.website
-      ? (() => {
-          try {
-            return new URL(company.website.startsWith('http') ? company.website : `https://${company.website}`).hostname.replace('www.', '')
-          } catch { return null }
-        })()
-      : null
-
     let updated = 0
-    const method = cseId ? 'custom_search' : 'places_api'
 
     for (const kw of keywords) {
       try {
-        let position: number | null = null
-
-        if (cseId) {
-          position = await checkRankingViaCustomSearch(
-            kw.keyword, company.name, companyDomain, company.phone, apiKey, cseId
-          )
-        } else {
-          position = await checkRankingViaPlaces(
-            kw.keyword, company.name, company.city, apiKey
-          )
-        }
+        const { position } = await checkRankingViaPlaces(
+          kw.keyword, company.name, company.city, company.state, company.phone, apiKey
+        )
 
         await supabase
           .from('keyword_rankings')
@@ -214,7 +162,7 @@ Deno.serve(async (req: Request) => {
 
     return new Response(JSON.stringify({
       success: true,
-      method,
+      method: 'places_api',
       keywordsChecked: keywords.length,
       keywordsUpdated: updated,
     }), {
