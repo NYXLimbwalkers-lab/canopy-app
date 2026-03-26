@@ -11,6 +11,7 @@ import {
   TextInput,
   KeyboardAvoidingView,
   Platform,
+  Alert,
 } from 'react-native';
 import { Colors } from '@/constants/Colors';
 import { Theme } from '@/constants/Theme';
@@ -153,6 +154,35 @@ export default function SeoScreen() {
   const [gbpUrl, setGbpUrl] = useState('');
   const [gbpSaving, setGbpSaving] = useState(false);
   const [gbpSaveSuccess, setGbpSaveSuccess] = useState(false);
+  const [syncingReviews, setSyncingReviews] = useState(false);
+
+  const syncReviews = async () => {
+    if (!company || syncingReviews) return;
+    setSyncingReviews(true);
+    try {
+      const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL;
+      const supabaseKey = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY;
+      const resp = await fetch(`${supabaseUrl}/functions/v1/sync-reviews`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${supabaseKey}`,
+        },
+        body: JSON.stringify({ companyId: company.id }),
+      });
+      const result = await resp.json();
+      if (result.error) {
+        Alert.alert('Sync Error', result.error);
+      } else {
+        Alert.alert('Reviews Synced', `${result.synced} new reviews pulled from Google.`);
+        await fetchData(); // Refresh the reviews list
+      }
+    } catch (err: any) {
+      Alert.alert('Error', err.message || 'Failed to sync reviews');
+    } finally {
+      setSyncingReviews(false);
+    }
+  };
 
   const fetchData = useCallback(async () => {
     if (!company) return;
@@ -449,7 +479,20 @@ Keep it under 50 words. Be genuine, thank them by name, and invite them back or 
       )}
 
       {/* Reviews */}
-      <Text style={styles.sectionTitle}>Reviews</Text>
+      <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+        <Text style={styles.sectionTitle}>Reviews</Text>
+        {gbp && (
+          <TouchableOpacity
+            style={{ backgroundColor: Colors.primary, paddingHorizontal: 12, paddingVertical: 6, borderRadius: 8, opacity: syncingReviews ? 0.6 : 1 }}
+            onPress={syncReviews}
+            disabled={syncingReviews}
+          >
+            <Text style={{ color: '#fff', fontSize: 13, fontWeight: '600' }}>
+              {syncingReviews ? 'Syncing...' : '🔄 Sync Google'}
+            </Text>
+          </TouchableOpacity>
+        )}
+      </View>
       {loading ? (
         <ActivityIndicator color={Colors.primary} />
       ) : reviews.length === 0 ? (
