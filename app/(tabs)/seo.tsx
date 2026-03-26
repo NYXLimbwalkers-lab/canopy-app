@@ -369,9 +369,37 @@ Keep it under 50 words. Be genuine, thank them by name, and invite them back or 
       await supabase.from('citations').insert(citationSeeds);
     }
 
-    setGbpSaving(false);
     setGbpSaveSuccess(true);
+    setGbpConnectModal(false);
     await fetchData();
+
+    // Auto-sync reviews from Google after GBP connection
+    setSyncingReviews(true);
+    try {
+      const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL;
+      const supabaseKey = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY;
+      const resp = await fetch(`${supabaseUrl}/functions/v1/sync-reviews`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${supabaseKey}`,
+        },
+        body: JSON.stringify({ companyId: company.id }),
+      });
+      const result = await resp.json();
+      if (result.synced > 0) {
+        Alert.alert('Reviews Found', `Pulled ${result.synced} reviews from Google.`);
+        await fetchData();
+      } else if (result.error) {
+        // Don't alert on error during auto-sync — user can manually sync later
+        console.warn('Auto review sync:', result.error);
+      }
+    } catch (err) {
+      console.warn('Auto review sync failed:', err);
+    } finally {
+      setSyncingReviews(false);
+      setGbpSaving(false);
+    }
   };
 
   const openGbpEdit = () => {
