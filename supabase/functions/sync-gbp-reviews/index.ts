@@ -1,4 +1,3 @@
-import { serve } from 'https://deno.land/std@0.177.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 
 const corsHeaders = {
@@ -40,8 +39,10 @@ function calcScore(data: {
   return score;
 }
 
-serve(async (req) => {
-  if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
+Deno.serve(async (req: Request) => {
+  if (req.method === 'OPTIONS') {
+    return new Response(null, { status: 204, headers: { ...corsHeaders, 'Access-Control-Allow-Methods': 'POST, OPTIONS' } });
+  }
 
   try {
     const { company_id } = await req.json();
@@ -67,7 +68,47 @@ serve(async (req) => {
     // Try to extract Place ID from stored URL
     let placeId = profile.place_id ?? extractPlaceId(profile.website);
 
-    // If still no Place ID, use Text Search to find it
+    // Resolve short URLs (maps.app.goo.gl, goo.gl, share.google) by following redirects
+    if (!placeId && profile.website) {
+      const url = profile.website;
+      if (url.includes('goo.gl') || url.includes('maps.app.goo.gl') || url.includes('share.google')) {
+        try {
+          const res = await fetch(url, { redirect: 'follow' });
+          const finalUrl = res.url;
+          if (finalUrl !== url) {
+            placeId = extractPlaceId(finalUrl);
+          }
+          // Also try to extract from the HTML body (some redirects are JS-based)
+          if (!placeId) {
+            const html = await res.text();
+            const match = html.match(/place_id[=:][\s"']*(ChIJ[^"'&\s]+)/);
+            if (match) placeId = match[1];
+            // Try to find a full maps URL in the HTML
+            if (!placeId) {
+              const mapsUrl = html.match(/https:\/\/www\.google\.com\/maps\/place\/[^"'\s]+/);
+              if (mapsUrl) placeId = extractPlaceId(mapsUrl[0]);
+            }
+          }
+        } catch {
+          // URL resolution failed, fall through to text search
+        }
+      }
+    }
+
+    // If still no Place ID, use Find Place From Text API
+    if (!placeId) {
+      // Try the GBP profile name first
+      const searchName = profile.name;
+      if (searchName) {
+        const findRes = await fetch(
+          `https://maps.googleapis.com/maps/api/place/findplacefromtext/json?input=${encodeURIComponent(searchName)}&inputtype=textquery&fields=place_id&key=${placesKey}`
+        );
+        const findJson = await findRes.json();
+        placeId = findJson.candidates?.[0]?.place_id ?? null;
+      }
+    }
+
+    // Fallback: Text Search with company name + city
     if (!placeId) {
       const { data: company } = await supabase
         .from('companies')
@@ -76,7 +117,7 @@ serve(async (req) => {
         .single();
 
       if (company) {
-        const query = encodeURIComponent(`${company.name} ${company.city ?? ''} tree service`);
+        const query = encodeURIComponent(`${company.name} ${company.city ?? ''}`);
         const searchRes = await fetch(
           `https://maps.googleapis.com/maps/api/place/textsearch/json?query=${query}&key=${placesKey}`
         );

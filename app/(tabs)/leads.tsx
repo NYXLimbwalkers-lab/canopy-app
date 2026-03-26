@@ -80,6 +80,8 @@ function LeadDetailModal({
   onScore,
   scoringId,
   onReviewRequest,
+  onCreateEstimate,
+  creatingEstimate,
 }: {
   lead: Lead | null;
   visible: boolean;

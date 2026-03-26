@@ -62,12 +62,12 @@ Deno.serve(async (req: Request) => {
     if (!link) {
       const { data: gbp } = await supabase
         .from('gbp_profiles')
-        .select('gbp_id, website')
+        .select('place_id, website')
         .eq('company_id', companyId)
         .single()
 
-      if (gbp?.gbp_id) {
-        link = `https://search.google.com/local/writereview?placeid=${gbp.gbp_id}`
+      if (gbp?.place_id) {
+        link = `https://search.google.com/local/writereview?placeid=${gbp.place_id}`
       } else if (gbp?.website) {
         link = gbp.website
       }
