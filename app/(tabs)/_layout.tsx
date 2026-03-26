@@ -40,6 +40,12 @@ export default function TabsLayout() {
         }}
       />
       <Tabs.Screen
+        name="estimates"
+        options={{
+          tabBarIcon: ({ focused }) => <TabIcon emoji="📋" label="Estimates" focused={focused} />,
+        }}
+      />
+      <Tabs.Screen
         name="ads"
         options={{
           tabBarIcon: ({ focused }) => <TabIcon emoji="📣" label="Ads" focused={focused} />,

@@ -11,6 +11,7 @@ import {
   KeyboardAvoidingView,
   Platform,
   Modal,
+  Linking,
 } from 'react-native';
 
 import { router } from 'expo-router';
@@ -22,6 +23,9 @@ import { useAuthStore } from '@/lib/stores/authStore';
 import { supabase } from '@/lib/supabase';
 import { trialDaysRemaining, PLANS } from '@/lib/stripe';
 import { crossAlert } from '@/lib/crossAlert';
+import { startFacebookOAuth, isFacebookConnected } from '@/lib/meta';
+import { startTikTokOAuth, isTikTokConnected } from '@/lib/tiktok';
+import { startYouTubeOAuth, isYouTubeConnected } from '@/lib/youtube';
 
 const AI_KEY_STORAGE = 'EXPO_PUBLIC_OPENROUTER_API_KEY';
 const AI_MODEL_STORAGE = 'CANOPY_AI_MODEL_PREF';
@@ -76,6 +80,12 @@ export default function SettingsScreen() {
   }>({ visible: false, platform: '', type: 'ad', label: '' });
   const [connectInput, setConnectInput] = useState('');
   const [connectSaving, setConnectSaving] = useState(false);
+
+  // Social OAuth connection status
+  const [fbConnected, setFbConnected] = useState(false);
+  const [tiktokConnected, setTiktokConnected] = useState(false);
+  const [ytConnected, setYtConnected] = useState(false);
+  const [socialStatusLoading, setSocialStatusLoading] = useState(true);
 
   // UI state
   const [saving, setSaving] = useState(false);
@@ -135,6 +145,50 @@ export default function SettingsScreen() {
   useEffect(() => {
     fetchConnections();
   }, [fetchConnections]);
+
+  // Check OAuth social connection status
+  useEffect(() => {
+    if (!company) return;
+    setSocialStatusLoading(true);
+    Promise.all([
+      isFacebookConnected(company.id),
+      isTikTokConnected(company.id),
+      isYouTubeConnected(company.id),
+    ])
+      .then(([fb, tt, yt]) => {
+        setFbConnected(fb);
+        setTiktokConnected(tt);
+        setYtConnected(yt);
+      })
+      .catch(() => {})
+      .finally(() => setSocialStatusLoading(false));
+  }, [company]);
+
+  const oauthRedirectUri = Linking.createURL('oauth-callback');
+
+  const handleConnectFacebook = useCallback(() => {
+    try {
+      startFacebookOAuth(oauthRedirectUri);
+    } catch (err: any) {
+      crossAlert('Error', err.message);
+    }
+  }, [oauthRedirectUri]);
+
+  const handleConnectTikTok = useCallback(() => {
+    try {
+      startTikTokOAuth(oauthRedirectUri);
+    } catch (err: any) {
+      crossAlert('Error', err.message);
+    }
+  }, [oauthRedirectUri]);
+
+  const handleConnectYouTube = useCallback(() => {
+    try {
+      startYouTubeOAuth(oauthRedirectUri);
+    } catch (err: any) {
+      crossAlert('Error', err.message);
+    }
+  }, [oauthRedirectUri]);
 
   // Save company + profile
   const handleSave = useCallback(async () => {
@@ -648,6 +702,64 @@ export default function SettingsScreen() {
             }
             onDisconnect={(id) => handleDisconnect('social', id, 'YouTube')}
           />
+        </View>
+
+        {/* ── SOCIAL CONNECTIONS (OAuth) ──────────────── */}
+        <Text style={styles.sectionHeader}>SOCIAL CONNECTIONS</Text>
+        <View style={styles.card}>
+          {socialStatusLoading ? (
+            <View style={styles.socialLoadingRow}>
+              <ActivityIndicator size="small" color={Colors.textTertiary} />
+              <Text style={styles.socialLoadingText}>Checking connections...</Text>
+            </View>
+          ) : (
+            <>
+              {/* Facebook / Instagram */}
+              <View style={styles.row}>
+                <Text style={styles.rowLabel}>Facebook / Instagram</Text>
+                {fbConnected ? (
+                  <View style={styles.connectedBadge}>
+                    <View style={styles.connectedDot} />
+                    <Text style={styles.connectedText}>Connected</Text>
+                  </View>
+                ) : (
+                  <TouchableOpacity onPress={handleConnectFacebook} style={styles.connectBtn}>
+                    <Text style={styles.connectBtnText}>Connect</Text>
+                  </TouchableOpacity>
+                )}
+              </View>
+              <Divider />
+              {/* TikTok */}
+              <View style={styles.row}>
+                <Text style={styles.rowLabel}>TikTok</Text>
+                {tiktokConnected ? (
+                  <View style={styles.connectedBadge}>
+                    <View style={styles.connectedDot} />
+                    <Text style={styles.connectedText}>Connected</Text>
+                  </View>
+                ) : (
+                  <TouchableOpacity onPress={handleConnectTikTok} style={styles.connectBtn}>
+                    <Text style={styles.connectBtnText}>Connect</Text>
+                  </TouchableOpacity>
+                )}
+              </View>
+              <Divider />
+              {/* YouTube */}
+              <View style={styles.row}>
+                <Text style={styles.rowLabel}>YouTube</Text>
+                {ytConnected ? (
+                  <View style={styles.connectedBadge}>
+                    <View style={styles.connectedDot} />
+                    <Text style={styles.connectedText}>Connected</Text>
+                  </View>
+                ) : (
+                  <TouchableOpacity onPress={handleConnectYouTube} style={styles.connectBtn}>
+                    <Text style={styles.connectBtnText}>Connect</Text>
+                  </TouchableOpacity>
+                )}
+              </View>
+            </>
+          )}
         </View>
 
         {/* ── SUBSCRIPTION ─────────────────────────────── */}
@@ -1186,6 +1298,20 @@ const styles = StyleSheet.create({
     fontSize: Theme.font.size.body,
     color: Colors.textInverse,
     fontWeight: Theme.font.weight.semibold,
+  },
+
+  // Social connections loading
+  socialLoadingRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: Theme.space.lg,
+    paddingVertical: Theme.space.xl,
+    gap: 10,
+  },
+  socialLoadingText: {
+    fontSize: Theme.font.size.small,
+    color: Colors.textTertiary,
   },
 
   bottomPad: { height: 32 },

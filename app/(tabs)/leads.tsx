@@ -88,9 +88,12 @@ function LeadDetailModal({
   onScore: (lead: Lead) => void;
   scoringId: string | null;
   onReviewRequest: (lead: Lead) => void;
+  onCreateEstimate: (lead: Lead) => void;
+  creatingEstimate: boolean;
 }) {
   if (!lead) return null;
   const isScoring = scoringId === lead.id;
+  const showEstimateBtn = ['new', 'contacted', 'quoted'].includes(lead.status);
 
   return (
     <Modal visible={visible} animationType="slide" presentationStyle="pageSheet" onRequestClose={onClose}>
@@ -211,6 +214,21 @@ function LeadDetailModal({
               </View>
             </View>
           )}
+
+          {/* Create Estimate */}
+          {showEstimateBtn && (
+            <TouchableOpacity
+              style={[detailStyles.estimateBtn, creatingEstimate && detailStyles.estimateBtnDisabled]}
+              onPress={() => onCreateEstimate(lead)}
+              disabled={creatingEstimate}
+            >
+              {creatingEstimate ? (
+                <ActivityIndicator size="small" color="#fff" />
+              ) : (
+                <Text style={detailStyles.estimateBtnText}>Create Estimate</Text>
+              )}
+            </TouchableOpacity>
+          )}
         </ScrollView>
       </View>
     </Modal>
@@ -296,6 +314,7 @@ export default function LeadsScreen() {
   // AI state
   const [aiResult, setAiResult] = useState<{ leadId: string; score: number; followUpMessage: string } | null>(null);
   const [scoringId, setScoringId] = useState<string | null>(null);
+  const [creatingEstimate, setCreatingEstimate] = useState(false);
   const [reviewRequest, setReviewRequest] = useState<{ leadId: string; leadName: string; message: string } | null>(null);
 
   const fetchLeads = useCallback(async () => {
@@ -423,6 +442,70 @@ export default function LeadsScreen() {
     }
   };
 
+  const handleCreateEstimate = async (lead: Lead) => {
+    if (!company) return;
+    setCreatingEstimate(true);
+    try {
+      // Step 1: Check if a customer already exists (match by email or phone)
+      let customerId: string | null = null;
+      const orFilters: string[] = [];
+      if (lead.email) orFilters.push(`email.eq.${lead.email}`);
+      if (lead.phone) orFilters.push(`phone.eq.${lead.phone}`);
+
+      if (orFilters.length > 0) {
+        const { data: existingCustomers } = await supabase
+          .from('customers')
+          .select('id')
+          .eq('company_id', company.id)
+          .or(orFilters.join(','))
+          .limit(1);
+        if (existingCustomers && existingCustomers.length > 0) {
+          customerId = existingCustomers[0].id;
+        }
+      }
+
+      // If no existing customer, create one
+      if (!customerId) {
+        const { data: newCustomer, error: custError } = await supabase
+          .from('customers')
+          .insert({
+            company_id: company.id,
+            name: lead.name,
+            email: lead.email || null,
+            phone: lead.phone || null,
+          })
+          .select('id')
+          .single();
+        if (custError) throw custError;
+        customerId = newCustomer.id;
+      }
+
+      // Step 2: Create the estimate
+      const { error: estError } = await supabase
+        .from('estimates')
+        .insert({
+          company_id: company.id,
+          customer_id: customerId,
+          status: 'draft',
+          line_items: [],
+          subtotal: 0,
+          tax: 0,
+          total: 0,
+        });
+      if (estError) throw estError;
+
+      // Step 3: Update lead status to 'quoted'
+      await handleStatusChange(lead.id, 'quoted');
+
+      // Step 4: Alert user
+      Alert.alert('Estimate created!', 'Go to Estimates tab to add line items.');
+    } catch (err: any) {
+      Alert.alert('Error', err.message || 'Failed to create estimate.');
+    } finally {
+      setCreatingEstimate(false);
+    }
+  };
+
   const handleOpenDetail = (lead: Lead) => {
     setSelectedLead(lead);
     setShowDetail(true);
@@ -521,6 +604,8 @@ export default function LeadsScreen() {
         onScore={handleScoreLead}
         scoringId={scoringId}
         onReviewRequest={generateReviewRequest}
+        onCreateEstimate={handleCreateEstimate}
+        creatingEstimate={creatingEstimate}
       />
 
       {/* AI Follow-up Message Banner */}
@@ -777,6 +862,15 @@ const detailStyles = StyleSheet.create({
   },
   aiBtnDisabled: { opacity: 0.5 },
   aiBtnText: { fontSize: Theme.font.size.body, color: Colors.primary, fontWeight: Theme.font.weight.semibold },
+  estimateBtn: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 14,
+    borderRadius: Theme.radius.md,
+    backgroundColor: '#22c55e',
+  },
+  estimateBtnDisabled: { opacity: 0.5 },
+  estimateBtnText: { fontSize: Theme.font.size.body, color: '#fff', fontWeight: Theme.font.weight.bold },
 });
 
 // ─── Main Screen Styles ───────────────────────────────────────────────────────

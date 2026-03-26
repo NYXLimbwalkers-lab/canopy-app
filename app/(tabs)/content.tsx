@@ -20,6 +20,9 @@ import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
 import { useAuthStore } from '@/lib/stores/authStore';
 import { supabase } from '@/lib/supabase';
+import { postToTikTok, isTikTokConnected } from '@/lib/tiktok';
+import { uploadYouTubeShort, isYouTubeConnected } from '@/lib/youtube';
+import { isFacebookConnected } from '@/lib/meta';
 
 // ─── Dark palette (not from Colors — this tab has its own rich dark theme) ───
 const D = {
@@ -291,6 +294,7 @@ interface VideoGenerateProps {
   videoId: string | null;
   invokeError: string | null;
   onClose: () => void;
+  onPostToSocial?: (videoUrl: string) => void;
 }
 
 const PROGRESS_STEPS = [
@@ -299,7 +303,7 @@ const PROGRESS_STEPS = [
   { key: 'render',  label: 'Rendering your video',    icon: '⚙️' },
 ];
 
-function VideoGenerateModal({ visible, videoId, invokeError, onClose }: VideoGenerateProps) {
+function VideoGenerateModal({ visible, videoId, invokeError, onClose, onPostToSocial }: VideoGenerateProps) {
   const [video, setVideo] = useState<GeneratedVideo | null>(null);
   const [stepIndex, setStepIndex] = useState(0);
   const channelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
@@ -427,6 +431,16 @@ function VideoGenerateModal({ visible, videoId, invokeError, onClose }: VideoGen
                 <Text style={vg.shareBtnText}>📤 Share Video</Text>
               </TouchableOpacity>
 
+              {video?.video_url && onPostToSocial && (
+                <TouchableOpacity
+                  style={vg.postSocialBtn}
+                  onPress={() => onPostToSocial(video.video_url!)}
+                  activeOpacity={0.85}
+                >
+                  <Text style={vg.postSocialBtnText}>📱 Post to Social</Text>
+                </TouchableOpacity>
+              )}
+
               {video?.video_url && (
                 <TouchableOpacity
                   style={vg.openBtn}
@@ -497,6 +511,8 @@ const vg = StyleSheet.create({
 
   shareBtn:           { backgroundColor: D.green, width: '100%', paddingVertical: 16, borderRadius: Theme.radius.lg, alignItems: 'center' },
   shareBtnText:       { fontSize: Theme.font.size.body, fontWeight: Theme.font.weight.bold, color: '#FFFFFF' },
+  postSocialBtn:      { backgroundColor: D.purple, width: '100%', paddingVertical: 16, borderRadius: Theme.radius.lg, alignItems: 'center' },
+  postSocialBtnText:  { fontSize: Theme.font.size.body, fontWeight: Theme.font.weight.bold, color: '#FFFFFF' },
   openBtn:            { paddingVertical: 8 },
   openBtnText:        { fontSize: Theme.font.size.small, color: D.textSec },
 
@@ -531,6 +547,16 @@ export default function ContentScreen() {
   const [socialInput,       setSocialInput]       = useState('');
   const [socialSaving,      setSocialSaving]      = useState(false);
   const [socialError,       setSocialError]       = useState<string | null>(null);
+
+  // Post to Social modal state
+  const [postSocialModal,   setPostSocialModal]   = useState(false);
+  const [postSocialVideo,   setPostSocialVideo]   = useState<{ url: string; title: string; script: string } | null>(null);
+  const [postSocialCaption, setPostSocialCaption] = useState('');
+  const [postSocialTags,    setPostSocialTags]    = useState('');
+  const [postSocialPlatforms, setPostSocialPlatforms] = useState<{ tiktok: boolean; youtube: boolean; facebook: boolean }>({ tiktok: false, youtube: false, facebook: false });
+  const [postSocialConnected, setPostSocialConnected] = useState<{ tiktok: boolean; youtube: boolean; facebook: boolean }>({ tiktok: false, youtube: false, facebook: false });
+  const [postSocialPosting,  setPostSocialPosting]  = useState(false);
+  const [postSocialResults,  setPostSocialResults]  = useState<{ platform: string; success: boolean; message: string }[]>([]);
 
   // ── Data fetching ──────────────────────────────────────────────────────────
   const fetchData = useCallback(async () => {
@@ -679,6 +705,77 @@ HOOK: (the first line)
     setSocialInput('');
     setSocialPlatform(null);
     await fetchData();
+  };
+
+  // ── Post to Social ─────────────────────────────────────────────────────────
+  const openPostSocialModal = async (videoUrl: string, title: string, scriptText: string) => {
+    if (!company) return;
+    setPostSocialVideo({ url: videoUrl, title, script: scriptText });
+    setPostSocialCaption(title);
+    setPostSocialTags('#treeservice, #treeremoval, #arborist, #treework, #treetrimming, #treecare');
+    setPostSocialResults([]);
+    setPostSocialPosting(false);
+
+    // Check which platforms are connected
+    const [tiktok, youtube, facebook] = await Promise.all([
+      isTikTokConnected(company.id),
+      isYouTubeConnected(company.id),
+      isFacebookConnected(company.id),
+    ]);
+    setPostSocialConnected({ tiktok, youtube, facebook });
+    setPostSocialPlatforms({ tiktok, youtube, facebook: false });
+    setPostSocialModal(true);
+  };
+
+  const handlePostToSocial = async () => {
+    if (!company || !postSocialVideo) return;
+    setPostSocialPosting(true);
+    setPostSocialResults([]);
+
+    const results: { platform: string; success: boolean; message: string }[] = [];
+    const hashtags = postSocialTags
+      .split(',')
+      .map(t => t.trim())
+      .filter(Boolean);
+
+    if (postSocialPlatforms.tiktok) {
+      const res = await postToTikTok(company.id, {
+        videoUrl: postSocialVideo.url,
+        caption: postSocialCaption,
+        hashtags,
+      });
+      results.push({
+        platform: 'TikTok',
+        success: res.success,
+        message: res.success ? 'Posted successfully' : (res.error ?? 'Failed to post'),
+      });
+    }
+
+    if (postSocialPlatforms.youtube) {
+      const res = await uploadYouTubeShort(company.id, {
+        videoUrl: postSocialVideo.url,
+        title: postSocialCaption,
+        description: `${postSocialCaption}\n\n${hashtags.join(' ')}`,
+        tags: hashtags.map(h => h.replace(/^#/, '')),
+        isShort: true,
+      });
+      results.push({
+        platform: 'YouTube Shorts',
+        success: res.success,
+        message: res.success ? 'Uploaded successfully' : (res.error ?? 'Failed to upload'),
+      });
+    }
+
+    if (postSocialPlatforms.facebook) {
+      results.push({
+        platform: 'Facebook/Instagram',
+        success: false,
+        message: 'Coming soon — requires Meta app review',
+      });
+    }
+
+    setPostSocialResults(results);
+    setPostSocialPosting(false);
   };
 
   // ── Helpers ────────────────────────────────────────────────────────────────
@@ -955,6 +1052,13 @@ HOOK: (the first line)
         videoId={videoJobId}
         invokeError={videoInvokeError}
         onClose={() => { setVideoModal(false); setVideoJobId(null); setVideoInvokeError(null); }}
+        onPostToSocial={(videoUrl) => {
+          openPostSocialModal(
+            videoUrl,
+            selectedVideoTypeLabel,
+            script ?? '',
+          );
+        }}
       />
     </ScrollView>
 
@@ -1012,6 +1116,134 @@ HOOK: (the first line)
           </TouchableOpacity>
         </View>
       </KeyboardAvoidingView>
+    </Modal>
+
+    {/* ── Post to Social Modal ── */}
+    <Modal
+      visible={postSocialModal}
+      animationType="slide"
+      presentationStyle="pageSheet"
+      onRequestClose={() => setPostSocialModal(false)}
+    >
+      <View style={ps.container}>
+        <View style={ps.header}>
+          <TouchableOpacity onPress={() => setPostSocialModal(false)}>
+            <Text style={ps.closeTxt}>Cancel</Text>
+          </TouchableOpacity>
+          <Text style={ps.headerTitle}>Post to Social</Text>
+          <View style={{ width: 44 }} />
+        </View>
+
+        <ScrollView style={ps.scroll} contentContainerStyle={ps.scrollContent}>
+          {/* Platform toggles */}
+          <Text style={ps.sectionLabel}>PLATFORMS</Text>
+
+          <TouchableOpacity
+            style={[ps.platformRow, !postSocialConnected.tiktok && ps.platformRowDisabled]}
+            onPress={() => postSocialConnected.tiktok && setPostSocialPlatforms(p => ({ ...p, tiktok: !p.tiktok }))}
+            activeOpacity={postSocialConnected.tiktok ? 0.7 : 1}
+          >
+            <View style={[ps.checkbox, postSocialPlatforms.tiktok && ps.checkboxChecked]}>
+              {postSocialPlatforms.tiktok && <Text style={ps.checkmark}>✓</Text>}
+            </View>
+            <Text style={ps.platformIcon}>♪</Text>
+            <View style={{ flex: 1 }}>
+              <Text style={ps.platformName}>TikTok</Text>
+              {!postSocialConnected.tiktok && <Text style={ps.notConnected}>Not connected</Text>}
+            </View>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[ps.platformRow, !postSocialConnected.youtube && ps.platformRowDisabled]}
+            onPress={() => postSocialConnected.youtube && setPostSocialPlatforms(p => ({ ...p, youtube: !p.youtube }))}
+            activeOpacity={postSocialConnected.youtube ? 0.7 : 1}
+          >
+            <View style={[ps.checkbox, postSocialPlatforms.youtube && ps.checkboxChecked]}>
+              {postSocialPlatforms.youtube && <Text style={ps.checkmark}>✓</Text>}
+            </View>
+            <Text style={ps.platformIcon}>▶</Text>
+            <View style={{ flex: 1 }}>
+              <Text style={ps.platformName}>YouTube Shorts</Text>
+              {!postSocialConnected.youtube && <Text style={ps.notConnected}>Not connected</Text>}
+            </View>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[ps.platformRow, ps.platformRowDisabled]}
+            onPress={() => {
+              if (postSocialConnected.facebook) {
+                setPostSocialPlatforms(p => ({ ...p, facebook: !p.facebook }));
+              }
+            }}
+            activeOpacity={postSocialConnected.facebook ? 0.7 : 1}
+          >
+            <View style={[ps.checkbox, postSocialPlatforms.facebook && ps.checkboxChecked]}>
+              {postSocialPlatforms.facebook && <Text style={ps.checkmark}>✓</Text>}
+            </View>
+            <Text style={ps.platformIcon}>◈</Text>
+            <View style={{ flex: 1 }}>
+              <Text style={ps.platformName}>Facebook / Instagram</Text>
+              <Text style={ps.notConnected}>Coming soon — requires Meta app review</Text>
+            </View>
+          </TouchableOpacity>
+
+          {/* Caption field */}
+          <Text style={ps.sectionLabel}>CAPTION</Text>
+          <Input
+            label=""
+            placeholder="Write a caption..."
+            value={postSocialCaption}
+            onChangeText={setPostSocialCaption}
+            multiline
+            numberOfLines={3}
+          />
+
+          {/* Hashtags field */}
+          <Text style={ps.sectionLabel}>HASHTAGS</Text>
+          <Input
+            label=""
+            placeholder="#treeservice, #arborist, ..."
+            value={postSocialTags}
+            onChangeText={setPostSocialTags}
+            autoCapitalize="none"
+          />
+
+          {/* Post button */}
+          <TouchableOpacity
+            style={[
+              ps.postBtn,
+              (postSocialPosting || (!postSocialPlatforms.tiktok && !postSocialPlatforms.youtube && !postSocialPlatforms.facebook)) && { opacity: 0.5 },
+            ]}
+            onPress={handlePostToSocial}
+            disabled={postSocialPosting || (!postSocialPlatforms.tiktok && !postSocialPlatforms.youtube && !postSocialPlatforms.facebook)}
+            activeOpacity={0.85}
+          >
+            {postSocialPosting ? (
+              <ActivityIndicator color="#FFFFFF" />
+            ) : (
+              <Text style={ps.postBtnText}>Post Now</Text>
+            )}
+          </TouchableOpacity>
+
+          {/* Results */}
+          {postSocialResults.length > 0 && (
+            <View style={ps.resultsCard}>
+              <Text style={ps.resultsTitle}>Results</Text>
+              {postSocialResults.map((r, i) => (
+                <View key={i} style={ps.resultRow}>
+                  <Text style={[ps.resultIcon, { color: r.success ? '#22C55E' : '#F87171' }]}>
+                    {r.success ? '✓' : '✕'}
+                  </Text>
+                  <View style={{ flex: 1 }}>
+                    <Text style={ps.resultPlatform}>{r.platform}</Text>
+                    <Text style={ps.resultMessage}>{r.message}</Text>
+                  </View>
+                </View>
+              ))}
+            </View>
+          )}
+        </ScrollView>
+      </View>
     </Modal>
     </>
   );
@@ -1132,4 +1364,34 @@ const sm = StyleSheet.create({
   filmBtnArrow:        { fontSize: 22, color: D.textSec, fontWeight: '300' as const },
 
   aiVideoBtn:          { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', backgroundColor: D.green, borderRadius: Theme.radius.lg, padding: Theme.space.lg },
+});
+
+// ─── Post to Social modal styles ─────────────────────────────────────────────
+const ps = StyleSheet.create({
+  container:          { flex: 1, backgroundColor: D.bg },
+  header:             { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: Theme.layout.screenPadding, paddingTop: Theme.space.xl, borderBottomWidth: 1, borderBottomColor: D.border, backgroundColor: D.surface },
+  closeTxt:           { fontSize: Theme.font.size.body, color: D.green, fontWeight: Theme.font.weight.semibold },
+  headerTitle:        { fontSize: Theme.font.size.subtitle, fontWeight: Theme.font.weight.semibold, color: D.text },
+  scroll:             { flex: 1 },
+  scrollContent:      { padding: Theme.layout.screenPadding, paddingBottom: 48, gap: Theme.space.md },
+  sectionLabel:       { fontSize: 11, fontWeight: '800' as const, color: D.gold, letterSpacing: 1.5, marginTop: Theme.space.md },
+
+  platformRow:        { flexDirection: 'row', alignItems: 'center', gap: 12, backgroundColor: D.surface, borderRadius: Theme.radius.lg, padding: Theme.space.lg, borderWidth: 1, borderColor: D.border },
+  platformRowDisabled:{ opacity: 0.5 },
+  checkbox:           { width: 24, height: 24, borderRadius: 6, borderWidth: 2, borderColor: D.border, alignItems: 'center', justifyContent: 'center' },
+  checkboxChecked:    { backgroundColor: '#22C55E', borderColor: '#22C55E' },
+  checkmark:          { fontSize: 14, color: '#FFFFFF', fontWeight: '700' as const },
+  platformIcon:       { fontSize: 22, width: 28, textAlign: 'center' },
+  platformName:       { fontSize: Theme.font.size.body, fontWeight: Theme.font.weight.semibold, color: D.text },
+  notConnected:       { fontSize: Theme.font.size.caption, color: '#6B7280', marginTop: 2 },
+
+  postBtn:            { backgroundColor: '#22C55E', borderRadius: Theme.radius.lg, paddingVertical: 16, alignItems: 'center', marginTop: Theme.space.md },
+  postBtnText:        { fontSize: Theme.font.size.body, fontWeight: Theme.font.weight.bold, color: '#FFFFFF' },
+
+  resultsCard:        { backgroundColor: D.surface, borderRadius: Theme.radius.lg, padding: Theme.space.lg, borderWidth: 1, borderColor: D.border, gap: 12 },
+  resultsTitle:       { fontSize: Theme.font.size.subtitle, fontWeight: Theme.font.weight.bold, color: D.text },
+  resultRow:          { flexDirection: 'row', alignItems: 'flex-start', gap: 10 },
+  resultIcon:         { fontSize: 18, fontWeight: '700' as const, marginTop: 1 },
+  resultPlatform:     { fontSize: Theme.font.size.body, fontWeight: Theme.font.weight.semibold, color: D.text },
+  resultMessage:      { fontSize: Theme.font.size.small, color: D.textSec, marginTop: 2 },
 });
