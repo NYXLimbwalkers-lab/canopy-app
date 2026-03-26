@@ -1,11 +1,30 @@
 import React, { useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, Alert } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, Alert, Platform } from 'react-native';
 import { router } from 'expo-router';
 import { Colors } from '@/constants/Colors';
 import { Theme } from '@/constants/Theme';
 import { Button } from '@/components/ui/Button';
 import { useAuthStore } from '@/lib/stores/authStore';
 import { supabase } from '@/lib/supabase';
+
+function crossAlert(title: string, message: string, buttons?: Array<{ text: string; style?: string; onPress?: () => void }>) {
+  if (Platform.OS === 'web') {
+    const destructiveBtn = buttons?.find((b) => b.style === 'destructive');
+    const cancelBtn = buttons?.find((b) => b.style === 'cancel');
+    const actionBtn = destructiveBtn || buttons?.find((b) => b.style !== 'cancel');
+    if (actionBtn && cancelBtn) {
+      const confirmed = window.confirm(`${title}\n\n${message}`);
+      if (confirmed) actionBtn.onPress?.();
+    } else if (actionBtn) {
+      window.alert(`${title}\n\n${message}`);
+      actionBtn.onPress?.();
+    } else {
+      window.alert(`${title}\n\n${message}`);
+    }
+  } else {
+    crossAlert(title, message, buttons as any);
+  }
+}
 
 export default function FirstCampaignStep() {
   const { company, updateOnboardingStep } = useAuthStore();
@@ -38,7 +57,7 @@ export default function FirstCampaignStep() {
       try { await updateOnboardingStep(9); } catch {}
       router.push('/(onboarding)/done');
     } catch (err: any) {
-      Alert.alert('Error', err.message ?? 'Failed to create campaign.');
+      crossAlert('Error', err.message ?? 'Failed to create campaign.');
     } finally {
       setLoading(false);
     }

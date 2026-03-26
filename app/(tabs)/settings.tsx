@@ -13,31 +13,6 @@ import {
   Modal,
 } from 'react-native';
 
-// Cross-platform alert helper (Alert.alert doesn't work on web)
-function crossAlert(
-  title: string,
-  message: string,
-  buttons?: Array<{ text: string; style?: string; onPress?: () => void }>
-) {
-  if (Platform.OS === 'web') {
-    // On web, use window.confirm for destructive actions or window.alert for info
-    const destructiveBtn = buttons?.find((b) => b.style === 'destructive');
-    const cancelBtn = buttons?.find((b) => b.style === 'cancel');
-    const actionBtn = destructiveBtn || buttons?.find((b) => b.style !== 'cancel');
-
-    if (actionBtn && cancelBtn) {
-      const confirmed = window.confirm(`${title}\n\n${message}`);
-      if (confirmed) actionBtn.onPress?.();
-    } else if (actionBtn) {
-      window.alert(`${title}\n\n${message}`);
-      actionBtn.onPress?.();
-    } else {
-      window.alert(`${title}\n\n${message}`);
-    }
-  } else {
-    Alert.alert(title, message, buttons as any);
-  }
-}
 import { router } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import Constants from 'expo-constants';
@@ -46,6 +21,7 @@ import { Theme } from '@/constants/Theme';
 import { useAuthStore } from '@/lib/stores/authStore';
 import { supabase } from '@/lib/supabase';
 import { trialDaysRemaining, PLANS } from '@/lib/cashapp';
+import { crossAlert } from '@/lib/crossAlert';
 
 const AI_KEY_STORAGE = 'EXPO_PUBLIC_OPENROUTER_API_KEY';
 const AI_MODEL_STORAGE = 'CANOPY_AI_MODEL_PREF';

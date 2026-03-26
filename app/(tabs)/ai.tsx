@@ -16,30 +16,7 @@ import {
 } from '@/lib/ai';
 import { useAuthStore } from '@/lib/stores/authStore';
 import { supabase } from '@/lib/supabase';
-
-// Cross-platform alert helper (Alert.alert doesn't work on web)
-function crossAlert(
-  title: string,
-  message: string,
-  buttons?: Array<{ text: string; style?: string; onPress?: () => void }>
-) {
-  if (Platform.OS === 'web') {
-    const destructiveBtn = buttons?.find((b) => b.style === 'destructive');
-    const cancelBtn = buttons?.find((b) => b.style === 'cancel');
-    const actionBtn = destructiveBtn || buttons?.find((b) => b.style !== 'cancel');
-    if (actionBtn && cancelBtn) {
-      const confirmed = window.confirm(`${title}\n\n${message}`);
-      if (confirmed) actionBtn.onPress?.();
-    } else if (actionBtn) {
-      window.alert(`${title}\n\n${message}`);
-      actionBtn.onPress?.();
-    } else {
-      window.alert(`${title}\n\n${message}`);
-    }
-  } else {
-    Alert.alert(title, message, buttons as any);
-  }
-}
+import { crossAlert } from '@/lib/crossAlert';
 
 if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
   UIManager.setLayoutAnimationEnabledExperimental(true);

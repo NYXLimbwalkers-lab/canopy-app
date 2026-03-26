@@ -22,30 +22,7 @@ import { EmptyState } from '@/components/ui/EmptyState';
 import { ScoreCard } from '@/components/ui/ScoreCard';
 import { useAuthStore } from '@/lib/stores/authStore';
 import { supabase } from '@/lib/supabase';
-
-// Cross-platform alert helper (Alert.alert doesn't work on web)
-function crossAlert(
-  title: string,
-  message: string,
-  buttons?: Array<{ text: string; style?: string; onPress?: () => void }>
-) {
-  if (Platform.OS === 'web') {
-    const destructiveBtn = buttons?.find((b) => b.style === 'destructive');
-    const cancelBtn = buttons?.find((b) => b.style === 'cancel');
-    const actionBtn = destructiveBtn || buttons?.find((b) => b.style !== 'cancel');
-    if (actionBtn && cancelBtn) {
-      const confirmed = window.confirm(`${title}\n\n${message}`);
-      if (confirmed) actionBtn.onPress?.();
-    } else if (actionBtn) {
-      window.alert(`${title}\n\n${message}`);
-      actionBtn.onPress?.();
-    } else {
-      window.alert(`${title}\n\n${message}`);
-    }
-  } else {
-    Alert.alert(title, message, buttons as any);
-  }
-}
+import { crossAlert } from '@/lib/crossAlert';
 
 type AdPlatform = 'google' | 'facebook' | 'other';
 type CampaignStatus = 'active' | 'paused' | 'ended' | 'draft';
@@ -68,13 +45,13 @@ interface AdConnection {
   account_name: string | null;
 }
 
-const PLATFORM_ICONS: Record<Platform, string> = {
+const PLATFORM_ICONS: Record<AdPlatform, string> = {
   google: '🔵',
   facebook: '📘',
   other: '📣',
 };
 
-const PLATFORM_NAMES: Record<Platform, string> = {
+const PLATFORM_NAMES: Record<AdPlatform, string> = {
   google: 'Google Ads',
   facebook: 'Facebook Ads',
   other: 'Other',
@@ -174,7 +151,7 @@ export default function AdsScreen() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [connectModal, setConnectModal] = useState(false);
-  const [connectingPlatform, setConnectingPlatform] = useState<Platform | null>(null);
+  const [connectingPlatform, setConnectingPlatform] = useState<AdPlatform | null>(null);
   const [accountInput, setAccountInput] = useState('');
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
@@ -187,7 +164,7 @@ export default function AdsScreen() {
     ]);
     setCampaigns(campaignRes.data ?? []);
     const mappedConnections: AdConnection[] = (connectionRes.data ?? []).map(a => ({
-      platform: a.platform as Platform,
+      platform: a.platform as AdPlatform,
       connected: a.connected ?? true,
       account_id: a.account_id,
       account_name: a.account_name ?? null,
