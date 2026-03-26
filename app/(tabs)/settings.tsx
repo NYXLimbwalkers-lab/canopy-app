@@ -164,7 +164,13 @@ export default function SettingsScreen() {
       .finally(() => setSocialStatusLoading(false));
   }, [company]);
 
-  const oauthRedirectUri = Linking.createURL('oauth-callback');
+  const oauthRedirectUri = (() => {
+    try {
+      return Linking.createURL?.('oauth-callback') ?? `${typeof window !== 'undefined' ? window.location.origin : ''}/oauth-callback`;
+    } catch {
+      return `${typeof window !== 'undefined' ? window.location.origin : ''}/oauth-callback`;
+    }
+  })();
 
   const handleConnectFacebook = useCallback(() => {
     try {
