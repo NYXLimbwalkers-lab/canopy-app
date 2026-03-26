@@ -29,7 +29,7 @@ interface GbpProfile {
   address: string | null;
   phone: string | null;
   website: string | null;
-  hours: any;
+  hours: Record<string, unknown> | null;
   photos: string[] | null;
   last_synced_at: string | null;
 }
@@ -73,7 +73,7 @@ function GbpScoreGauge({ score }: { score: number }) {
         <Text style={[gaugeStyles.scoreLabel, { color }]}>{label}</Text>
         <Text style={gaugeStyles.scoreDesc}>Google Business Profile score</Text>
         <View style={gaugeStyles.progressBar}>
-          <View style={[gaugeStyles.progressFill, { width: `${score}%` as any, backgroundColor: color }]} />
+          <View style={[gaugeStyles.progressFill, { width: `${score}%`, backgroundColor: color }]} />
         </View>
       </View>
     </View>
