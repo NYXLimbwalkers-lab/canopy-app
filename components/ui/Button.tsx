@@ -21,19 +21,19 @@ interface Props {
 export function Button({ label, onPress, variant = 'primary', size = 'md', loading, disabled, style, textStyle, icon }: Props) {
   const isDisabled = disabled || loading;
 
-  const containerStyle: ViewStyle[] = [
+  const containerStyle = [
     styles.base,
     styles[`variant_${variant}`],
     styles[`size_${size}`],
-    isDisabled && styles.disabled,
-    style as ViewStyle,
+    isDisabled ? styles.disabled : undefined,
+    style,
   ];
 
-  const labelStyle: TextStyle[] = [
+  const labelStyle = [
     styles.label,
     styles[`label_${variant}`],
     styles[`labelSize_${size}`],
-    textStyle as TextStyle,
+    textStyle,
   ];
 
   return (
