@@ -616,6 +616,10 @@ export default function AIExpertScreen() {
   const generateId = () => `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 
   const handleActionAdCopy = async () => {
+    if (!isAIConfigured()) {
+      setMessages(prev => [...prev, { id: generateId(), role: 'assistant', content: `⚠️ AI is not configured yet. Go to **Settings → AI Configuration** and enter your OpenRouter API key. Get one free at openrouter.ai`, timestamp: Date.now() }]);
+      return;
+    }
     setLoading(true);
     const ctx = getCompanyContext();
     const service = ctx.services[0] ?? 'tree removal';
@@ -673,6 +677,17 @@ export default function AIExpertScreen() {
   };
 
   const handleActionVideoScript = async () => {
+    if (!isAIConfigured()) {
+      const errMsg: Message = {
+        id: generateId(),
+        role: 'assistant',
+        content: `⚠️ AI is not configured yet. Go to **Settings → AI Configuration** and enter your OpenRouter API key. You can get one free at openrouter.ai`,
+        timestamp: Date.now(),
+      };
+      setMessages(prev => [...prev, errMsg]);
+      return;
+    }
+
     setLoading(true);
     const ctx = getCompanyContext();
 
@@ -712,7 +727,7 @@ export default function AIExpertScreen() {
       const errMsg: Message = {
         id: generateId(),
         role: 'assistant',
-        content: `Error generating video script: ${e.message}`,
+        content: `⚠️ Error generating video script: ${e.message}\n\nMake sure your OpenRouter API key is valid in Settings → AI Configuration.`,
         timestamp: Date.now(),
       };
       setMessages(prev => [...prev, errMsg]);
@@ -888,6 +903,10 @@ export default function AIExpertScreen() {
   };
 
   const handleActionContentCalendar = async () => {
+    if (!isAIConfigured()) {
+      setMessages(prev => [...prev, { id: generateId(), role: 'assistant', content: `⚠️ AI is not configured yet. Go to **Settings → AI Configuration** and enter your OpenRouter API key. Get one free at openrouter.ai`, timestamp: Date.now() }]);
+      return;
+    }
     setLoading(true);
     const ctx = getCompanyContext();
     const month = new Date().getMonth();
@@ -936,6 +955,10 @@ export default function AIExpertScreen() {
   };
 
   const handleActionMarketStrategy = async () => {
+    if (!isAIConfigured()) {
+      setMessages(prev => [...prev, { id: generateId(), role: 'assistant', content: `⚠️ AI is not configured yet. Go to **Settings → AI Configuration** and enter your OpenRouter API key. Get one free at openrouter.ai`, timestamp: Date.now() }]);
+      return;
+    }
     setLoading(true);
     const ctx = getCompanyContext();
 
