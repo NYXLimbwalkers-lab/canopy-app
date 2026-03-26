@@ -183,10 +183,7 @@ async function handleFacebookLeads(
 
   return new Response(JSON.stringify({ success: true, created }), {
     status: 200,
-    headers: {
-      'Access-Control-Allow-Origin': '*',
-      'Content-Type': 'application/json',
-    },
+    headers: { ...corsHeaders, 'Content-Type': 'application/json' },
   })
 }
 
@@ -216,7 +213,7 @@ async function handleGoogleAdsLead(
   if (!adAccount) {
     return new Response(JSON.stringify({ error: 'No Google Ads account connected' }), {
       status: 404,
-      headers: { 'Content-Type': 'application/json' },
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     })
   }
 
@@ -253,12 +250,12 @@ async function handleGoogleAdsLead(
   if (error) {
     return new Response(JSON.stringify({ error: error.message }), {
       status: 500,
-      headers: { 'Content-Type': 'application/json' },
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     })
   }
 
   return new Response(JSON.stringify({ success: true, leadId: lead.id }), {
     status: 201,
-    headers: { 'Content-Type': 'application/json' },
+    headers: { ...corsHeaders, 'Content-Type': 'application/json' },
   })
 }

@@ -3,9 +3,22 @@
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 
+const corsHeaders = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+  'Access-Control-Allow-Methods': 'POST, OPTIONS',
+}
+
 Deno.serve(async (req: Request) => {
+  if (req.method === 'OPTIONS') {
+    return new Response(null, { status: 204, headers: corsHeaders })
+  }
+
   if (req.method !== 'POST') {
-    return new Response('ok', { status: 200 })
+    return new Response(JSON.stringify({ error: 'Method not allowed' }), {
+      status: 405,
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+    })
   }
 
   try {
@@ -21,7 +34,10 @@ Deno.serve(async (req: Request) => {
     }
 
     if (!videoId) {
-      return new Response('ok', { status: 200 })
+      return new Response(JSON.stringify({ error: 'Missing videoId in metadata' }), {
+        status: 400,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      })
     }
 
     const supabase = createClient(
@@ -47,8 +63,15 @@ Deno.serve(async (req: Request) => {
         .eq('id', videoId)
     }
 
-    return new Response('ok', { status: 200 })
-  } catch (_err) {
-    return new Response('ok', { status: 200 })
+    return new Response(JSON.stringify({ success: true }), {
+      status: 200,
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+    })
+  } catch (err) {
+    const message = err instanceof Error ? err.message : 'Internal error'
+    return new Response(JSON.stringify({ error: message }), {
+      status: 500,
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+    })
   }
 })
