@@ -80,6 +80,38 @@ Deno.serve(async (req: Request) => {
   }
 })
 
+// Strip stage directions, shot markers, and formatting from script so TTS only speaks natural words
+function cleanScriptForTTS(raw: string): string {
+  return raw
+    .replace(/\[.*?\]/g, '')           // Remove [SHOT], [ACTION], [CLOSE UP] etc.
+    .replace(/^(HOOK|CTA|INTRO|OUTRO|---)\s*:?\s*/gim, '') // Remove section labels
+    .replace(/---+/g, '')              // Remove dividers
+    .replace(/\*\*.*?\*\*/g, '')       // Remove bold markdown
+    .replace(/#+\s*/g, '')             // Remove heading markers
+    .replace(/\n{2,}/g, '\n')          // Collapse multiple newlines
+    .replace(/^\s+|\s+$/gm, '')        // Trim lines
+    .split('\n')
+    .filter(line => line.length > 0)
+    .join('. ')                         // Join as natural sentences
+    .replace(/\.\.\./g, ', ')          // Ellipsis → brief pause
+    .replace(/\.\s*\./g, '.')          // Clean double periods
+    .trim()
+}
+
+// Break script into short caption segments for TikTok-style word display
+function splitIntoCaptionSegments(script: string, maxSegments = 6): string[] {
+  const cleaned = cleanScriptForTTS(script)
+  const sentences = cleaned.split(/(?<=[.!?])\s+/).filter(s => s.length > 5)
+  if (sentences.length <= maxSegments) return sentences
+  // Merge shorter sentences to hit target segment count
+  const merged: string[] = []
+  const perGroup = Math.ceil(sentences.length / maxSegments)
+  for (let i = 0; i < sentences.length; i += perGroup) {
+    merged.push(sentences.slice(i, i + perGroup).join(' '))
+  }
+  return merged.slice(0, maxSegments)
+}
+
 async function processVideo(
   supabase: ReturnType<typeof createClient>,
   videoId: string,
@@ -97,20 +129,44 @@ async function processVideo(
     )
   }
 
+  // Look up company name for watermark
+  const { data: videoRow } = await supabase
+    .from('generated_videos')
+    .select('company_id')
+    .eq('id', videoId)
+    .single()
+  let companyName = 'Canopy'
+  if (videoRow?.company_id) {
+    const { data: co } = await supabase
+      .from('companies')
+      .select('name')
+      .eq('id', videoRow.company_id)
+      .single()
+    if (co?.name) companyName = co.name
+  }
+
+  const spokenText = cleanScriptForTTS(script)
+
   // ── Step 1: ElevenLabs voiceover ──────────────────────────────────────────
   let audioUrl: string | null = null
 
   if (elevenLabsKey) {
-    // Adam voice — natural, confident, good for trades/services
+    // Josh voice — warm, relatable, younger male — sounds like a real guy on TikTok
+    // Alternative: "Adam" (pNInz6obpgDQGcFmaJgB) for deeper/more authoritative
     const ttsResp = await fetch(
-      'https://api.elevenlabs.io/v1/text-to-speech/pNInz6obpgDQGcFmaJgB',
+      'https://api.elevenlabs.io/v1/text-to-speech/TxGEqnHWrfWFTfGW9XjX',
       {
         method: 'POST',
         headers: { 'xi-api-key': elevenLabsKey, 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          text: script,
-          model_id: 'eleven_turbo_v2',
-          voice_settings: { stability: 0.5, similarity_boost: 0.75 },
+          text: spokenText,
+          model_id: 'eleven_multilingual_v2',
+          voice_settings: {
+            stability: 0.35,           // Lower = more expressive, natural variation
+            similarity_boost: 0.6,     // Lower = less robotic, more human imperfection
+            style: 0.15,               // Slight style exaggeration for engagement
+            use_speaker_boost: true,    // Enhances clarity
+          },
         }),
       },
     )
@@ -138,14 +194,15 @@ async function processVideo(
 
   if (pexelsKey) {
     const query = VIDEO_TYPE_SEARCH[videoType] ?? 'tree service arborist'
+    // Fetch more clips for variety and better pacing
     const pexelsResp = await fetch(
-      `https://api.pexels.com/videos/search?query=${encodeURIComponent(query)}&per_page=3&orientation=portrait&size=medium`,
+      `https://api.pexels.com/videos/search?query=${encodeURIComponent(query)}&per_page=5&orientation=portrait&size=medium`,
       { headers: { Authorization: pexelsKey } },
     )
 
     if (pexelsResp.ok) {
       const pexelsData = await pexelsResp.json()
-      for (const video of (pexelsData.videos ?? []).slice(0, 3)) {
+      for (const video of (pexelsData.videos ?? []).slice(0, 4)) {
         const hdFile = video.video_files?.find((f: any) => f.quality === 'hd')
           ?? video.video_files?.[0]
         if (hdFile?.link) videoClips.push(hdFile.link)
@@ -159,13 +216,31 @@ async function processVideo(
   // Build composition elements
   const elements: any[] = []
 
+  // Estimate total duration from spoken text (~2.5 words/sec for natural pacing)
+  const wordCount = spokenText.split(/\s+/).length
+  const estimatedDuration = Math.max(20, Math.min(60, Math.round(wordCount / 2.5)))
+
   if (videoClips.length > 0) {
-    // Stack clips sequentially in track 1
-    videoClips.forEach((src) => {
-      elements.push({ type: 'video', source: src, fit: 'cover', track: 1 })
+    // Distribute clips across the duration with crossfade transitions
+    const clipDuration = Math.round(estimatedDuration / videoClips.length)
+    videoClips.forEach((src, i) => {
+      const el: any = {
+        type: 'video',
+        source: src,
+        fit: 'cover',
+        track: 1,
+        duration: clipDuration,
+        trim_start: 0,
+        trim_duration: clipDuration,
+      }
+      // Add crossfade between clips (not on first)
+      if (i > 0) {
+        el.transition = { type: 'crossfade', duration: 0.8 }
+      }
+      elements.push(el)
     })
   } else {
-    // Fallback solid background when no footage available
+    // Fallback: dark gradient background
     elements.push({
       type: 'rectangle',
       width: '100%',
@@ -173,7 +248,7 @@ async function processVideo(
       x_anchor: '50%',
       y_anchor: '50%',
       fill_color: '#1A3326',
-      duration: 30,
+      duration: estimatedDuration,
       track: 1,
     })
   }
@@ -183,47 +258,58 @@ async function processVideo(
     elements.push({ type: 'audio', source: audioUrl, track: 2 })
   }
 
-  // Caption overlay: large readable white text with dark stroke
-  elements.push({
-    type: 'text',
-    text: script.length > 220 ? script.slice(0, 220) + '…' : script,
-    y: '72%',
-    width: '88%',
-    x_anchor: '50%',
-    y_anchor: '0%',
-    font_size: '4.8 vmin',
-    font_weight: '700',
-    fill_color: '#FFFFFF',
-    stroke_color: '#000000',
-    stroke_width: '0.4 vmin',
-    text_align: 'center',
-    background_color: 'rgba(0,0,0,0.45)',
-    background_x_padding: '3 vmin',
-    background_y_padding: '2 vmin',
-    background_border_radius: '1.5 vmin',
-    track: 3,
+  // Caption overlays: split into timed segments like real TikTok captions
+  const segments = splitIntoCaptionSegments(spokenText)
+  const segDuration = estimatedDuration / segments.length
+
+  segments.forEach((text, i) => {
+    elements.push({
+      type: 'text',
+      text: text.length > 80 ? text.slice(0, 77) + '...' : text,
+      time: i * segDuration,
+      duration: segDuration,
+      y: '72%',
+      width: '88%',
+      x_anchor: '50%',
+      y_anchor: '0%',
+      font_family: 'Montserrat',
+      font_size: '5.5 vmin',
+      font_weight: '800',
+      fill_color: '#FFFFFF',
+      stroke_color: '#000000',
+      stroke_width: '0.5 vmin',
+      text_align: 'center',
+      background_color: 'rgba(0,0,0,0.5)',
+      background_x_padding: '3 vmin',
+      background_y_padding: '2 vmin',
+      background_border_radius: '1.5 vmin',
+      enter: { type: 'text-appear', duration: 0.4 },
+      track: 3,
+    })
   })
 
-  // Company name watermark top-left
+  // Company watermark — use actual company name
   elements.push({
     type: 'text',
-    text: '🌳 Canopy',
+    text: `🌳 ${companyName}`,
     x: '4%',
     y: '4%',
     x_anchor: '0%',
     y_anchor: '0%',
-    font_size: '3.5 vmin',
+    font_family: 'Montserrat',
+    font_size: '3.2 vmin',
     font_weight: '700',
-    fill_color: '#FFFFFF',
+    fill_color: 'rgba(255,255,255,0.85)',
     stroke_color: '#000000',
-    stroke_width: '0.3 vmin',
-    track: 3,
+    stroke_width: '0.25 vmin',
+    track: 4,
   })
 
   const composition = {
     output_format: 'mp4',
     width: 1080,
     height: 1920, // 9:16 vertical — TikTok / Reels / Shorts
+    duration: estimatedDuration,
     elements,
   }
 
