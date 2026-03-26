@@ -391,7 +391,9 @@ export default function LeadsScreen() {
       setLeads(prev => prev.map(l => l.id === lead.id ? { ...l, score: result.score } : l));
       setSelectedLead(prev => prev?.id === lead.id ? { ...prev, score: result.score } : prev);
       setAiResult({ leadId: lead.id, score: result.score, followUpMessage: result.followUpMessage });
-    } catch {}
+    } catch {
+      Alert.alert('Error', 'Failed to score lead. Please try again.');
+    }
     setScoringId(null);
   };
 
