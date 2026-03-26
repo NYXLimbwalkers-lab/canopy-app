@@ -574,9 +574,9 @@ export default function AIExpertScreen() {
   // ─── Company Context for AI Functions ─────────────────────────────────
 
   const getCompanyContext = useCallback(() => ({
-    name: company?.name ?? 'Limbwalkers Tree Service',
-    city: company?.city ?? 'Spring Hill',
-    state: company?.state ?? 'FL',
+    name: company?.name ?? 'your tree service',
+    city: company?.city ?? '',
+    state: company?.state ?? '',
     services: Array.isArray(company?.services_offered) ? company.services_offered : ['tree removal', 'trimming', 'stump grinding'],
     radiusMiles: company?.service_radius_miles ?? 25,
   }), [company]);
@@ -600,9 +600,9 @@ export default function AIExpertScreen() {
 
   const getSystemPrompt = useCallback(() => {
     return buildSystemPrompt(
-      company?.name ?? 'Limbwalkers Tree Service',
-      company?.city ?? 'Spring Hill',
-      company?.state ?? 'FL',
+      company?.name ?? 'your tree service',
+      company?.city ?? '',
+      company?.state ?? '',
       Array.isArray(company?.services_offered) ? company.services_offered.join(', ') : 'tree removal, trimming, stump grinding',
       company?.service_radius_miles ?? 25,
       snapshot,
@@ -845,7 +845,7 @@ export default function AIExpertScreen() {
         const noReviewMsg: Message = {
           id: generateId(),
           role: 'assistant',
-          content: `All your reviews have been responded to — great job staying on top of reputation management! Keep requesting reviews after every completed job. Aim for 5+ new reviews per month to maintain strong Google Maps visibility in Spring Hill.`,
+          content: `All your reviews have been responded to — great job staying on top of reputation management! Keep requesting reviews after every completed job. Aim for 5+ new reviews per month to maintain strong Google Maps visibility${company.city ? ` in ${company.city}` : ''}.`,
           timestamp: Date.now(),
           suggestions: [
             `Write a review request text template`,

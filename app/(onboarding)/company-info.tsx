@@ -64,7 +64,7 @@ export default function CompanyInfoStep() {
       <Text style={styles.title}>Tell us about your company</Text>
 
       <View style={styles.form}>
-        <Input label="Company name *" value={name} onChangeText={setName} placeholder="Smith Tree Service" />
+        <Input label="Company name *" value={name} onChangeText={setName} placeholder="Acme Tree Service" />
         <Input label="Phone number *" value={phone} onChangeText={setPhone} placeholder="(555) 123-4567" keyboardType="phone-pad" />
         <Input label="Street address" value={address} onChangeText={setAddress} placeholder="123 Main St" />
         <View style={styles.row}>

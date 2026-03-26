@@ -413,7 +413,7 @@ export default function SettingsScreen() {
             label="Your name"
             value={userName}
             onChangeText={setUserName}
-            placeholder="Limbwalkers Tree Service"
+            placeholder="Jane Smith"
           />
           <Divider />
           <View style={styles.row}>
@@ -445,7 +445,7 @@ export default function SettingsScreen() {
             label="Company name"
             value={companyName}
             onChangeText={setCompanyName}
-            placeholder="Limbwalkers Tree Service"
+            placeholder="Acme Tree Service"
           />
           <Divider />
           <InputRow
