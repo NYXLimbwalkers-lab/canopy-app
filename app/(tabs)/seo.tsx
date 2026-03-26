@@ -464,21 +464,6 @@ Keep it under 50 words. Be genuine, thank them by name, and invite them back or 
     }
   };
 
-  const [syncingRankings, setSyncingRankings] = useState(false);
-
-  const syncRankingsNow = async () => {
-    if (!company) return;
-    setSyncingRankings(true);
-    try {
-      await supabase.functions.invoke('sync-rankings', { body: { companyId: company.id } });
-      await fetchData();
-    } catch {
-      // Non-fatal
-    } finally {
-      setSyncingRankings(false);
-    }
-  };
-
   const openGbpEdit = () => {
     setGbpSaveSuccess(false);
     setGbpUrl(gbp?.website ?? '');
@@ -566,7 +551,7 @@ Keep it under 50 words. Be genuine, thank them by name, and invite them back or 
         <Text style={styles.sectionTitle}>Keyword Rankings</Text>
         {gbp && (
           <TouchableOpacity
-            onPress={syncRankingsNow}
+            onPress={syncRankings}
             disabled={syncingRankings}
             style={{ flexDirection: 'row', alignItems: 'center', opacity: syncingRankings ? 0.5 : 1 }}
           >

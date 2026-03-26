@@ -189,46 +189,15 @@ async function syncViaPlacesApi(
     }
 
     if (!placeId) {
-      const { data: company } = await supabase
-        .from('companies')
-        .select('name, city, state, address')
-        .eq('id', companyId)
-        .single()
-
-      if (!company) {
-        return new Response(JSON.stringify({ error: 'Company not found' }), {
-          status: 404,
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        })
-      }
-
-      const parts = [company.name]
-      if (company.address) parts.push(company.address)
-      else if (company.city && company.state) parts.push(`${company.city}, ${company.state}`)
-      const searchQuery = parts.join(' ')
-
-      const searchResp = await fetch(
-        `https://maps.googleapis.com/maps/api/place/findplacefromtext/json?input=${encodeURIComponent(searchQuery)}&inputtype=textquery&fields=place_id,name,formatted_address&key=${googleApiKey}`
-      )
-      const searchData = await searchResp.json()
-
-      if (searchData.candidates?.length) {
-        placeId = searchData.candidates[0].place_id
-      } else {
-        const textSearchResp = await fetch(
-          `https://maps.googleapis.com/maps/api/place/textsearch/json?query=${encodeURIComponent(searchQuery)}&type=establishment&key=${googleApiKey}`
-        )
-        const textData = await textSearchResp.json()
-        if (!textData.results?.length) {
-          return new Response(JSON.stringify({
-            error: 'Could not find business on Google Maps. Connect your Google account for full access, or paste your Google Maps link.',
-          }), {
-            status: 404,
-            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-          })
-        }
-        placeId = textData.results[0].place_id
-      }
+      // Don't auto-search by name — it often finds the wrong profile (especially for SABs).
+      // Require either a saved place_id or Google OAuth connection.
+      return new Response(JSON.stringify({
+        error: 'No Google Place ID found. Please connect your Google account on the SEO page, or paste your Google Maps link to your business.',
+        needsConnection: true,
+      }), {
+        status: 404,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      })
     }
 
     if (placeId) {
