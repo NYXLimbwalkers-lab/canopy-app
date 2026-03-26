@@ -16,12 +16,19 @@ export const Colors = {
   // Semantic
   success: '#22C55E',
   successBg: '#DCFCE7',
+  successDark: '#15803D',
   warning: '#F59E0B',
   warningBg: '#FEF3C7',
+  warningDark: '#B45309',
   danger: '#EF4444',
   dangerBg: '#FEE2E2',
+  dangerDark: '#DC2626',
   info: '#3B82F6',
   infoBg: '#DBEAFE',
+  infoDark: '#1D4ED8',
+
+  // AI
+  aiBg: '#EDE9FE',
 
   // Neutrals (dark forest theme)
   background: '#0E1A14',

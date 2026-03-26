@@ -69,7 +69,7 @@ export function AIChat({ context }: Props) {
   return (
     <>
       {/* Floating button */}
-      <TouchableOpacity style={styles.fab} onPress={() => setOpen(true)} activeOpacity={0.85}>
+      <TouchableOpacity style={styles.fab} onPress={() => setOpen(true)} activeOpacity={0.85} accessibilityLabel="Open AI Chat" accessibilityRole="button">
         <Text style={styles.fabEmoji}>🤖</Text>
       </TouchableOpacity>
 
@@ -80,7 +80,7 @@ export function AIChat({ context }: Props) {
               <Text style={styles.headerTitle}>🤖 Canopy AI</Text>
               <Text style={styles.headerSub}>Ask anything about your business</Text>
             </View>
-            <TouchableOpacity onPress={() => setOpen(false)} style={styles.closeBtn}>
+            <TouchableOpacity onPress={() => setOpen(false)} style={styles.closeBtn} accessibilityLabel="Close AI Chat" accessibilityRole="button">
               <Text style={styles.closeBtnText}>✕</Text>
             </TouchableOpacity>
           </View>
@@ -133,7 +133,7 @@ export function AIChat({ context }: Props) {
               returnKeyType="send"
               blurOnSubmit={false}
             />
-            <TouchableOpacity style={[styles.sendBtn, !input.trim() && styles.sendBtnDisabled]} onPress={send} disabled={!input.trim() || loading}>
+            <TouchableOpacity style={[styles.sendBtn, !input.trim() && styles.sendBtnDisabled]} onPress={send} disabled={!input.trim() || loading} accessibilityLabel="Send message" accessibilityRole="button">
               <Text style={styles.sendBtnText}>↑</Text>
             </TouchableOpacity>
           </View>
