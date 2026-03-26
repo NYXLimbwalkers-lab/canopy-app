@@ -11,6 +11,8 @@ import {
   TextInput,
   KeyboardAvoidingView,
   Platform,
+  Alert,
+  Linking,
 } from 'react-native';
 import { Colors } from '@/constants/Colors';
 import { Theme } from '@/constants/Theme';
@@ -154,6 +156,165 @@ export default function SeoScreen() {
   const [gbpSaving, setGbpSaving] = useState(false);
   const [gbpSaveSuccess, setGbpSaveSuccess] = useState(false);
   const [gbpSyncResult, setGbpSyncResult] = useState<{ reviewsImported: number; completenessScore: number } | null>(null);
+  const [syncingReviews, setSyncingReviews] = useState(false);
+  const [syncingRankings, setSyncingRankings] = useState(false);
+  const [connectingGoogle, setConnectingGoogle] = useState(false);
+  const [googleConnected, setGoogleConnected] = useState(false);
+
+  // Check if Google OAuth is connected
+  useEffect(() => {
+    if (!company) return;
+    supabase
+      .from('gbp_profiles')
+      .select('google_refresh_token, gbp_location_name')
+      .eq('company_id', company.id)
+      .maybeSingle()
+      .then(({ data }) => {
+        if (data?.google_refresh_token && data?.gbp_location_name) {
+          setGoogleConnected(true);
+        }
+      });
+  }, [company]);
+
+  // Handle OAuth redirect (web only)
+  useEffect(() => {
+    if (Platform.OS !== 'web' || !company) return;
+    const params = new URLSearchParams(window.location.search);
+    const code = params.get('code');
+    const state = params.get('state');
+    if (!code || state !== company.id) return;
+
+    // Clean URL
+    window.history.replaceState({}, '', window.location.pathname);
+
+    // Exchange code for tokens
+    const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL;
+    const supabaseKey = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY;
+    setConnectingGoogle(true);
+
+    fetch(`${supabaseUrl}/functions/v1/gbp-oauth`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${supabaseKey}`,
+      },
+      body: JSON.stringify({
+        action: 'exchange',
+        code,
+        redirectUri: window.location.origin + window.location.pathname,
+        companyId: company.id,
+      }),
+    })
+      .then(r => r.json())
+      .then(result => {
+        if (result.success) {
+          setGoogleConnected(true);
+          Alert.alert('Google Connected', `Connected to ${result.businessName || 'your Google Business Profile'}. Syncing reviews...`);
+          syncReviews();
+        } else {
+          Alert.alert('Connection Failed', result.error || 'Could not connect Google account.');
+        }
+      })
+      .catch(() => Alert.alert('Error', 'Failed to connect Google account.'))
+      .finally(() => setConnectingGoogle(false));
+  }, [company]);
+
+  const connectGoogleOAuth = async () => {
+    if (!company) return;
+    setConnectingGoogle(true);
+    try {
+      const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL;
+      const supabaseKey = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY;
+
+      const redirectUri = Platform.OS === 'web'
+        ? window.location.origin + window.location.pathname
+        : 'canopy://oauth-callback';
+
+      const resp = await fetch(`${supabaseUrl}/functions/v1/gbp-oauth`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${supabaseKey}`,
+        },
+        body: JSON.stringify({
+          action: 'auth_url',
+          redirectUri,
+          companyId: company.id,
+        }),
+      });
+
+      const result = await resp.json();
+      if (result.url) {
+        if (Platform.OS === 'web') {
+          window.location.href = result.url;
+        } else {
+          await Linking.openURL(result.url);
+        }
+      } else {
+        Alert.alert('Error', result.error || 'Could not generate Google auth URL.');
+      }
+    } catch (err: any) {
+      Alert.alert('Error', err.message || 'Failed to start Google connection.');
+    } finally {
+      setConnectingGoogle(false);
+    }
+  };
+
+  const syncReviews = async () => {
+    if (!company || syncingReviews) return;
+    setSyncingReviews(true);
+    try {
+      const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL;
+      const supabaseKey = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY;
+      const resp = await fetch(`${supabaseUrl}/functions/v1/sync-reviews`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${supabaseKey}`,
+        },
+        body: JSON.stringify({ companyId: company.id }),
+      });
+      const result = await resp.json();
+      if (result.error) {
+        Alert.alert('Sync Error', result.error);
+      } else {
+        Alert.alert('Reviews Synced', `${result.reviewsImported ?? result.synced ?? 0} new reviews pulled from Google.`);
+        await fetchData();
+      }
+    } catch (err: any) {
+      Alert.alert('Error', err.message || 'Failed to sync reviews');
+    } finally {
+      setSyncingReviews(false);
+    }
+  };
+
+  const syncRankings = async () => {
+    if (!company || syncingRankings) return;
+    setSyncingRankings(true);
+    try {
+      const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL;
+      const supabaseKey = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY;
+      const resp = await fetch(`${supabaseUrl}/functions/v1/sync-rankings`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${supabaseKey}`,
+        },
+        body: JSON.stringify({ companyId: company.id }),
+      });
+      const result = await resp.json();
+      if (result.error) {
+        Alert.alert('Sync Error', result.error);
+      } else {
+        Alert.alert('Rankings Updated', `Checked ${result.keywordsUpdated} keywords.`);
+        await fetchData();
+      }
+    } catch (err: any) {
+      Alert.alert('Error', err.message || 'Failed to sync rankings');
+    } finally {
+      setSyncingRankings(false);
+    }
+  };
 
   const fetchData = useCallback(async () => {
     if (!company) return;
@@ -550,11 +711,37 @@ Keep it under 50 words. Be genuine, thank them by name, and invite them back or 
                 <View style={styles.gbpInfoBox}>
                   <Text style={styles.gbpInfoTitle}>🔍 What this does</Text>
                   <Text style={styles.gbpInfoText}>
-                    Connecting your Google Business Profile lets Canopy track your local SEO score, monitor keyword rankings, and pull in reviews so you can respond from one place.
+                    Connecting your Google Business Profile lets Canopy track your local SEO score, monitor keyword rankings, and pull in all your reviews so you can respond from one place.
                   </Text>
                 </View>
 
-                <Text style={styles.gbpStepsTitle}>How to find your GBP URL</Text>
+                {/* Google OAuth — recommended method */}
+                <View style={styles.gbpOauthBox}>
+                  <Text style={styles.gbpOauthTitle}>Recommended: Sign in with Google</Text>
+                  <Text style={styles.gbpOauthDesc}>
+                    Connect your Google account directly to pull all your reviews (not just 5). This uses your Google Business Profile owner access.
+                  </Text>
+                  {googleConnected ? (
+                    <View style={styles.gbpOauthConnected}>
+                      <Text style={styles.gbpOauthConnectedText}>✅ Google Account Connected</Text>
+                    </View>
+                  ) : (
+                    <Button
+                      label={connectingGoogle ? 'Connecting...' : 'Connect Google Account'}
+                      onPress={connectGoogleOAuth}
+                      loading={connectingGoogle}
+                      style={{ marginTop: 8 }}
+                    />
+                  )}
+                </View>
+
+                <View style={styles.gbpDivider}>
+                  <View style={styles.gbpDividerLine} />
+                  <Text style={styles.gbpDividerText}>OR</Text>
+                  <View style={styles.gbpDividerLine} />
+                </View>
+
+                <Text style={styles.gbpStepsTitle}>Paste your Google Maps URL instead</Text>
 
                 <View style={styles.gbpTipBox}>
                   <Text style={styles.gbpTipTitle}>🔎 Easiest method</Text>
@@ -774,6 +961,21 @@ const styles = StyleSheet.create({
   },
   gbpInfoTitle: { fontSize: Theme.font.size.body, fontWeight: Theme.font.weight.semibold, color: Colors.text },
   gbpInfoText: { fontSize: Theme.font.size.body, color: Colors.textSecondary, lineHeight: 22 },
+  gbpOauthBox: {
+    backgroundColor: Colors.success + '12',
+    borderRadius: Theme.radius.lg,
+    borderWidth: 1,
+    borderColor: Colors.success + '30',
+    padding: Theme.space.lg,
+    gap: Theme.space.sm,
+  },
+  gbpOauthTitle: { fontSize: Theme.font.size.body, fontWeight: Theme.font.weight.semibold, color: Colors.text },
+  gbpOauthDesc: { fontSize: Theme.font.size.small, color: Colors.textSecondary, lineHeight: 20 },
+  gbpOauthConnected: { paddingVertical: Theme.space.sm },
+  gbpOauthConnectedText: { fontSize: Theme.font.size.body, fontWeight: Theme.font.weight.semibold, color: Colors.success },
+  gbpDivider: { flexDirection: 'row', alignItems: 'center', gap: Theme.space.md, marginVertical: Theme.space.md },
+  gbpDividerLine: { flex: 1, height: 1, backgroundColor: Colors.border },
+  gbpDividerText: { fontSize: Theme.font.size.small, color: Colors.textTertiary, fontWeight: Theme.font.weight.medium },
   gbpStepsTitle: { fontSize: Theme.font.size.subtitle, fontWeight: Theme.font.weight.semibold, color: Colors.text, marginTop: Theme.space.sm },
   gbpStep: { flexDirection: 'row', gap: Theme.space.md, alignItems: 'flex-start' },
   gbpStepBadge: {
