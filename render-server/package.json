@@ -1,12 +1,18 @@
 {
   "name": "canopy-render-server",
   "version": "1.0.0",
-  "main": "server.js",
+  "description": "FFmpeg-based video render server for Canopy",
+  "main": "index.js",
   "scripts": {
-    "start": "node server.js"
+    "start": "node index.js"
   },
   "dependencies": {
     "express": "^4.18.2",
-    "@supabase/supabase-js": "^2.39.0"
+    "fluent-ffmpeg": "^2.1.2",
+    "@supabase/supabase-js": "^2.39.0",
+    "uuid": "^9.0.0"
+  },
+  "engines": {
+    "node": ">=18"
   }
 }

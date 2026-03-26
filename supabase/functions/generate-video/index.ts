@@ -1,5 +1,5 @@
-// generate-video — Orchestrates ElevenLabs TTS + Pexels footage + Creatomate render
-// Env vars required: ELEVENLABS_API_KEY, PEXELS_API_KEY, CREATOMATE_API_KEY
+// generate-video — Orchestrates ElevenLabs TTS + Pexels footage + FFmpeg render server
+// Env vars required: ELEVENLABS_API_KEY, PEXELS_API_KEY, RENDER_SERVER_URL
 // Env vars auto-injected: SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
