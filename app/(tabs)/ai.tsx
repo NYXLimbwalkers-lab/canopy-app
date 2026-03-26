@@ -1525,7 +1525,7 @@ const styles = StyleSheet.create({
     gap: 2,
   },
   contextItem: {
-    width: '19%' as any,
+    width: '19%',
     alignItems: 'center',
     paddingVertical: 8,
   },
@@ -1610,7 +1610,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     gap: 8,
     alignItems: 'flex-start',
-    maxWidth: '88%' as any,
+    maxWidth: '88%',
     marginBottom: 12,
   },
   userBubble: {
@@ -1684,7 +1684,7 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
     borderWidth: 1,
     borderColor: Colors.border,
-    maxWidth: '90%' as any,
+    maxWidth: '90%',
   },
   suggestionText: {
     fontSize: Theme.font.size.small,
@@ -1701,7 +1701,7 @@ const styles = StyleSheet.create({
     marginLeft: 36,
     borderWidth: 1,
     borderColor: Colors.border,
-    maxWidth: '88%' as any,
+    maxWidth: '88%',
   },
   resultCardHeader: {
     flexDirection: 'row',
