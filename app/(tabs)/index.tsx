@@ -38,6 +38,7 @@ export default function DashboardScreen() {
     const weekAgo = new Date(today);
     weekAgo.setDate(weekAgo.getDate() - 7);
 
+    // Supabase queries never throw — they return { data, error } — so Promise.all is safe
     const [leadsToday, leadsWeek, campaigns, jobs, recentLeads, invoices] = await Promise.all([
       supabase.from('leads').select('id', { count: 'exact', head: true }).eq('company_id', company.id).gte('created_at', today.toISOString()),
       supabase.from('leads').select('id', { count: 'exact', head: true }).eq('company_id', company.id).gte('created_at', weekAgo.toISOString()),
@@ -91,7 +92,7 @@ export default function DashboardScreen() {
 
   useEffect(() => {
     if (data) fetchBriefing(data.leadsToday, data.adSpendToday);
-  }, [company]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [data, fetchBriefing]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const getHour = () => new Date().getHours();
   const greeting = getHour() < 12 ? 'Good morning' : getHour() < 17 ? 'Good afternoon' : 'Good evening';

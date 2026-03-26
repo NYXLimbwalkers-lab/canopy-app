@@ -659,9 +659,11 @@ export default function AIExpertScreen() {
         ],
       };
 
-      const newMsgs = [...messages, userMsg, aiMsg];
-      setMessages(newMsgs);
-      saveConversation(newMsgs, mode);
+      setMessages(prev => {
+        const newMsgs = [...prev, aiMsg];
+        saveConversation(newMsgs, mode);
+        return newMsgs;
+      });
     } catch (e: any) {
       const errMsg: Message = {
         id: generateId(),
@@ -720,9 +722,11 @@ export default function AIExpertScreen() {
         ],
       };
 
-      const newMsgs = [...messages, userMsg, aiMsg];
-      setMessages(newMsgs);
-      saveConversation(newMsgs, mode);
+      setMessages(prev => {
+        const newMsgs = [...prev, aiMsg];
+        saveConversation(newMsgs, mode);
+        return newMsgs;
+      });
     } catch (e: any) {
       const errMsg: Message = {
         id: generateId(),
@@ -803,9 +807,11 @@ export default function AIExpertScreen() {
         ],
       };
 
-      const newMsgs = [...messages, userMsg, aiMsg];
-      setMessages(newMsgs);
-      saveConversation(newMsgs, mode);
+      setMessages(prev => {
+        const newMsgs = [...prev, aiMsg];
+        saveConversation(newMsgs, mode);
+        return newMsgs;
+      });
     } catch (e: any) {
       const errMsg: Message = {
         id: generateId(),
@@ -885,9 +891,11 @@ export default function AIExpertScreen() {
         ],
       };
 
-      const newMsgs = [...messages, userMsg, aiMsg];
-      setMessages(newMsgs);
-      saveConversation(newMsgs, mode);
+      setMessages(prev => {
+        const newMsgs = [...prev, aiMsg];
+        saveConversation(newMsgs, mode);
+        return newMsgs;
+      });
     } catch (e: any) {
       const errMsg: Message = {
         id: generateId(),
@@ -937,9 +945,11 @@ export default function AIExpertScreen() {
         ],
       };
 
-      const newMsgs = [...messages, userMsg, aiMsg];
-      setMessages(newMsgs);
-      saveConversation(newMsgs, mode);
+      setMessages(prev => {
+        const newMsgs = [...prev, aiMsg];
+        saveConversation(newMsgs, mode);
+        return newMsgs;
+      });
     } catch (e: any) {
       const errMsg: Message = {
         id: generateId(),
@@ -987,9 +997,11 @@ export default function AIExpertScreen() {
         ],
       };
 
-      const newMsgs = [...messages, userMsg, aiMsg];
-      setMessages(newMsgs);
-      saveConversation(newMsgs, mode);
+      setMessages(prev => {
+        const newMsgs = [...prev, aiMsg];
+        saveConversation(newMsgs, mode);
+        return newMsgs;
+      });
     } catch (e: any) {
       const errMsg: Message = {
         id: generateId(),

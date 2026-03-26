@@ -326,7 +326,7 @@ export default function LeadsScreen() {
       .select('*')
       .eq('company_id', company.id)
       .order('created_at', { ascending: false });
-    if (error) throw error;
+    if (error) { console.error('Failed to fetch leads:', error.message); return; }
     setLeads(data ?? []);
   }, [company]);
 
@@ -652,6 +652,7 @@ export default function LeadsScreen() {
                   <TouchableOpacity
                     style={[styles.dismissBtn, { backgroundColor: Colors.primary }]}
                     onPress={async () => {
+                      if (!lead?.phone || !lead?.name || !company) return;
                       try {
                         const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL;
                         const supabaseKey = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY;
@@ -662,14 +663,14 @@ export default function LeadsScreen() {
                             'Authorization': `Bearer ${supabaseKey}`,
                           },
                           body: JSON.stringify({
-                            companyId: company!.id,
-                            customerPhone: lead!.phone,
-                            customerName: lead!.name,
+                            companyId: company.id,
+                            customerPhone: lead.phone,
+                            customerName: lead.name,
                           }),
                         });
                         const result = await resp.json();
                         if (result.success) {
-                          Alert.alert('Sent!', `Review request SMS sent to ${lead!.name}`);
+                          Alert.alert('Sent!', `Review request SMS sent to ${lead.name}`);
                           setReviewRequest(null);
                         } else {
                           Alert.alert('Error', result.error || 'Failed to send SMS');

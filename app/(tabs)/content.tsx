@@ -660,7 +660,7 @@ HOOK: (the first line)
         body: { script, videoType: selectedVideoType, companyId: company.id },
       });
       if (error) throw error;
-      setVideoJobId(data.id);
+      setVideoJobId(data?.id ?? null);
     } catch (err: any) {
       setVideoInvokeError(
         err?.message?.includes('Failed to send')

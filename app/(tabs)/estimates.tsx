@@ -686,7 +686,7 @@ export default function EstimatesScreen() {
       .select('*, customers(name, email, phone)')
       .eq('company_id', company.id)
       .order('created_at', { ascending: false });
-    if (error) throw error;
+    if (error) { console.error('Failed to fetch estimates:', error.message); return; }
     setEstimates(data ?? []);
   }, [company]);
 

@@ -160,7 +160,7 @@ export default function SeoScreen() {
     const [gbpRes, kwRes, reviewRes, citRes] = await Promise.all([
       supabase.from('gbp_profiles').select('*').eq('company_id', company.id).maybeSingle(),
       supabase.from('keyword_rankings').select('*').eq('company_id', company.id).order('position', { ascending: true, nullsFirst: false }),
-      supabase.from('reviews').select('*').eq('company_id', company.id).order('created_at', { ascending: false }).limit(20),
+      supabase.from('reviews').select('*').eq('company_id', company.id).order('review_date', { ascending: false }).limit(20),
       supabase.from('citations').select('*').eq('company_id', company.id).order('status', { ascending: true }),
     ]);
     setGbp(gbpRes.data ?? null);
@@ -262,7 +262,7 @@ Keep it under 50 words. Be genuine, thank them by name, and invite them back or 
     setGbpSyncResult(null);
 
     // 1. Save the URL first
-    await supabase
+    const { error: upsertErr } = await supabase
       .from('gbp_profiles')
       .upsert(
         {
@@ -273,6 +273,7 @@ Keep it under 50 words. Be genuine, thank them by name, and invite them back or 
         },
         { onConflict: 'company_id' }
       );
+    if (upsertErr) { console.error('GBP upsert failed:', upsertErr.message); }
 
     // 2. Call edge function to sync real reviews from Google Places API
     try {
