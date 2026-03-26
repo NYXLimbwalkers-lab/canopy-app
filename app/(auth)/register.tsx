@@ -76,7 +76,7 @@ export default function RegisterScreen() {
           <Text style={styles.formTitle}>Create your account</Text>
 
           <Input label="Your name" value={name} onChangeText={setName} placeholder="Jane Smith" autoComplete="name" error={errors.name} />
-          <Input label="Company name" value={companyName} onChangeText={setCompanyName} placeholder="Smith Tree Service" error={errors.companyName} />
+          <Input label="Company name" value={companyName} onChangeText={setCompanyName} placeholder="Acme Tree Service" error={errors.companyName} />
           <Input label="Email address" value={email} onChangeText={setEmail} placeholder="jane@smithtrees.com" keyboardType="email-address" autoCapitalize="none" autoComplete="email" error={errors.email} />
           <Input label="Password" value={password} onChangeText={setPassword} placeholder="Min. 8 characters" secureTextEntry autoComplete="new-password" error={errors.password} />
           <Input label="Confirm password" value={confirmPassword} onChangeText={setConfirmPassword} placeholder="Re-enter your password" secureTextEntry error={errors.confirmPassword} />
