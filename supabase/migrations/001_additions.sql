@@ -8,6 +8,9 @@ ALTER TABLE content_posts ADD COLUMN IF NOT EXISTS title TEXT;
 -- Add account_name to ad_accounts
 ALTER TABLE ad_accounts ADD COLUMN IF NOT EXISTS account_name TEXT;
 
+-- Add connected flag to ad_accounts
+ALTER TABLE ad_accounts ADD COLUMN IF NOT EXISTS connected BOOLEAN DEFAULT false;
+
 -- Add social_connections table
 CREATE TABLE IF NOT EXISTS social_connections (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),

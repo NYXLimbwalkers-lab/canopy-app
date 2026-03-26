@@ -11,7 +11,6 @@ import {
   TextInput,
   KeyboardAvoidingView,
   Platform,
-  Alert,
 } from 'react-native';
 import { Colors } from '@/constants/Colors';
 import { Theme } from '@/constants/Theme';
@@ -154,64 +153,7 @@ export default function SeoScreen() {
   const [gbpUrl, setGbpUrl] = useState('');
   const [gbpSaving, setGbpSaving] = useState(false);
   const [gbpSaveSuccess, setGbpSaveSuccess] = useState(false);
-  const [syncingReviews, setSyncingReviews] = useState(false);
-  const [syncingRankings, setSyncingRankings] = useState(false);
-
-  const syncReviews = async () => {
-    if (!company || syncingReviews) return;
-    setSyncingReviews(true);
-    try {
-      const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL;
-      const supabaseKey = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY;
-      const resp = await fetch(`${supabaseUrl}/functions/v1/sync-reviews`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${supabaseKey}`,
-        },
-        body: JSON.stringify({ companyId: company.id }),
-      });
-      const result = await resp.json();
-      if (result.error) {
-        Alert.alert('Sync Error', result.error);
-      } else {
-        Alert.alert('Reviews Synced', `${result.synced} new reviews pulled from Google.`);
-        await fetchData(); // Refresh the reviews list
-      }
-    } catch (err: any) {
-      Alert.alert('Error', err.message || 'Failed to sync reviews');
-    } finally {
-      setSyncingReviews(false);
-    }
-  };
-
-  const syncRankings = async () => {
-    if (!company || syncingRankings) return;
-    setSyncingRankings(true);
-    try {
-      const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL;
-      const supabaseKey = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY;
-      const resp = await fetch(`${supabaseUrl}/functions/v1/sync-rankings`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${supabaseKey}`,
-        },
-        body: JSON.stringify({ companyId: company.id }),
-      });
-      const result = await resp.json();
-      if (result.error) {
-        Alert.alert('Sync Error', result.error);
-      } else {
-        Alert.alert('Rankings Updated', `Checked ${result.keywordsUpdated} keywords.`);
-        await fetchData();
-      }
-    } catch (err: any) {
-      Alert.alert('Error', err.message || 'Failed to sync rankings');
-    } finally {
-      setSyncingRankings(false);
-    }
-  };
+  const [gbpSyncResult, setGbpSyncResult] = useState<{ reviewsImported: number; completenessScore: number } | null>(null);
 
   const fetchData = useCallback(async () => {
     if (!company) return;
@@ -317,117 +259,46 @@ Keep it under 50 words. Be genuine, thank them by name, and invite them back or 
   const saveGbpConnection = async () => {
     if (!company) return;
     setGbpSaving(true);
+    setGbpSyncResult(null);
 
-    // Calculate a real completeness score from available company data
-    let score = 0;
-    if (company.name) score += 15;
-    if (company.phone) score += 15;
-    if (company.address || (company.city && company.state)) score += 15;
-    if (gbpUrl.trim()) score += 15;
-    if (company.services_offered && company.services_offered.length > 0) score += 10;
-    if (company.website) score += 10;
-    // Hours and photos are harder to auto-fill, give partial credit
-    score += 5; // assume basic hours set
-    // Cap at 85 without photos/hours fully verified
-    score = Math.min(score, 85);
-
+    // 1. Save the URL first
     await supabase
       .from('gbp_profiles')
       .upsert(
         {
           company_id: company.id,
           name: company.name,
-          phone: company.phone || null,
-          address: company.address || (company.city && company.state ? `${company.city}, ${company.state}` : null),
-          website: gbpUrl.trim() || company.website || null,
-          completeness_score: score,
+          website: gbpUrl.trim() || null,
           last_synced_at: new Date().toISOString(),
         },
         { onConflict: 'company_id' }
       );
 
-    // Auto-seed keyword rankings based on company services + city
-    if (company.services_offered && company.services_offered.length > 0 && company.city) {
-      const cityLower = company.city.toLowerCase();
-      const existingKw = await supabase
-        .from('keyword_rankings')
-        .select('keyword')
-        .eq('company_id', company.id);
-
-      if (!existingKw.data || existingKw.data.length === 0) {
-        const keywordSeeds = company.services_offered.slice(0, 5).flatMap(service => [
-          `${service.toLowerCase()} ${cityLower}`,
-          `${service.toLowerCase()} near me`,
-        ]);
-        // Add some generic ones
-        keywordSeeds.push(`tree service ${cityLower}`, `arborist ${cityLower}`, `emergency tree removal ${cityLower}`);
-
-        // Remove duplicates
-        const unique = [...new Set(keywordSeeds)];
-
-        const inserts = unique.map(keyword => ({
-          company_id: company.id,
-          keyword,
-          position: null, // We don't fake positions — they start as unranked
-          previous_position: null,
-          checked_at: new Date().toISOString(),
-        }));
-
-        await supabase.from('keyword_rankings').insert(inserts);
-      }
-    }
-
-    // Auto-seed common citation directories if none exist
-    const existingCitations = await supabase
-      .from('citations')
-      .select('id')
-      .eq('company_id', company.id);
-
-    if (!existingCitations.data || existingCitations.data.length === 0) {
-      const citationSeeds = [
-        { directory_name: 'Google Business Profile', status: 'claimed', url: gbpUrl.trim() || null },
-        { directory_name: 'Yelp', status: 'unclaimed', url: null },
-        { directory_name: 'BBB', status: 'unclaimed', url: null },
-        { directory_name: 'Angi (Angie\'s List)', status: 'unclaimed', url: null },
-        { directory_name: 'HomeAdvisor', status: 'unclaimed', url: null },
-        { directory_name: 'Facebook Business', status: 'unclaimed', url: null },
-        { directory_name: 'Thumbtack', status: 'unclaimed', url: null },
-        { directory_name: 'Nextdoor', status: 'unclaimed', url: null },
-      ].map(c => ({ ...c, company_id: company.id }));
-
-      await supabase.from('citations').insert(citationSeeds);
-    }
-
-    setGbpSaveSuccess(true);
-    setGbpConnectModal(false);
-    await fetchData();
-
-    // Auto-sync reviews from Google after GBP connection
-    setSyncingReviews(true);
+    // 2. Call edge function to sync real reviews from Google Places API
     try {
-      const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL;
-      const supabaseKey = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY;
-      const resp = await fetch(`${supabaseUrl}/functions/v1/sync-reviews`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${supabaseKey}`,
-        },
-        body: JSON.stringify({ companyId: company.id }),
+      const { data, error } = await supabase.functions.invoke('sync-gbp-reviews', {
+        body: { company_id: company.id },
       });
-      const result = await resp.json();
-      if (result.synced > 0) {
-        Alert.alert('Reviews Found', `Pulled ${result.synced} reviews from Google.`);
-        await fetchData();
-      } else if (result.error) {
-        // Don't alert on error during auto-sync — user can manually sync later
-        console.warn('Auto review sync:', result.error);
+      if (!error && data?.success) {
+        setGbpSyncResult({ reviewsImported: data.reviewsImported, completenessScore: data.completenessScore });
       }
-    } catch (err) {
-      console.warn('Auto review sync failed:', err);
+    } catch {
+      // Non-fatal — reviews will sync on next manual refresh
+    }
+
+    setGbpSaving(false);
+    setGbpSaveSuccess(true);
+    await fetchData();
+  };
+
+  const syncReviewsNow = async () => {
+    if (!company) return;
+    setRefreshing(true);
+    try {
+      await supabase.functions.invoke('sync-gbp-reviews', { body: { company_id: company.id } });
+      await fetchData();
     } finally {
-      setSyncingReviews(false);
-      setGbpSaving(false);
+      setRefreshing(false);
     }
   };
 
@@ -476,9 +347,14 @@ Keep it under 50 words. Be genuine, thank them by name, and invite them back or 
               </View>
             ))}
           </View>
-          <TouchableOpacity style={styles.editGbpBtn} onPress={openGbpEdit}>
-            <Text style={styles.editGbpBtnText}>⚙ Edit GBP connection</Text>
-          </TouchableOpacity>
+          <View style={{ flexDirection: 'row', borderTopWidth: 1, borderTopColor: Colors.border, marginTop: Theme.space.md }}>
+            <TouchableOpacity style={[styles.editGbpBtn, { flex: 1 }]} onPress={openGbpEdit}>
+              <Text style={styles.editGbpBtnText}>⚙ Edit</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={[styles.editGbpBtn, { flex: 1, borderLeftWidth: 1, borderLeftColor: Colors.border }]} onPress={syncReviewsNow}>
+              <Text style={[styles.editGbpBtnText, { color: Colors.primary }]}>↻ Sync reviews</Text>
+            </TouchableOpacity>
+          </View>
         </Card>
       ) : (
         <EmptyState
@@ -509,20 +385,7 @@ Keep it under 50 words. Be genuine, thank them by name, and invite them back or 
       )}
 
       {/* Keyword rankings */}
-      <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-        <Text style={styles.sectionTitle}>Keyword Rankings</Text>
-        {keywords.length > 0 && (
-          <TouchableOpacity
-            style={{ backgroundColor: Colors.primary, paddingHorizontal: 12, paddingVertical: 6, borderRadius: 8, opacity: syncingRankings ? 0.6 : 1 }}
-            onPress={syncRankings}
-            disabled={syncingRankings}
-          >
-            <Text style={{ color: '#fff', fontSize: 13, fontWeight: '600' }}>
-              {syncingRankings ? 'Checking...' : '📊 Check Rankings'}
-            </Text>
-          </TouchableOpacity>
-        )}
-      </View>
+      <Text style={styles.sectionTitle}>Keyword Rankings</Text>
       {loading ? (
         <ActivityIndicator color={Colors.primary} />
       ) : keywords.length === 0 ? (
@@ -549,20 +412,7 @@ Keep it under 50 words. Be genuine, thank them by name, and invite them back or 
       )}
 
       {/* Reviews */}
-      <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-        <Text style={styles.sectionTitle}>Reviews</Text>
-        {gbp && (
-          <TouchableOpacity
-            style={{ backgroundColor: Colors.primary, paddingHorizontal: 12, paddingVertical: 6, borderRadius: 8, opacity: syncingReviews ? 0.6 : 1 }}
-            onPress={syncReviews}
-            disabled={syncingReviews}
-          >
-            <Text style={{ color: '#fff', fontSize: 13, fontWeight: '600' }}>
-              {syncingReviews ? 'Syncing...' : '🔄 Sync Google'}
-            </Text>
-          </TouchableOpacity>
-        )}
-      </View>
+      <Text style={styles.sectionTitle}>Reviews</Text>
       {loading ? (
         <ActivityIndicator color={Colors.primary} />
       ) : reviews.length === 0 ? (
@@ -657,7 +507,10 @@ Keep it under 50 words. Be genuine, thank them by name, and invite them back or 
                 <Text style={styles.gbpSuccessIcon}>✅</Text>
                 <Text style={styles.gbpSuccessTitle}>GBP Connected!</Text>
                 <Text style={styles.gbpSuccessDesc}>
-                  Your Google Business Profile has been linked. Canopy will begin tracking your local SEO score and keyword rankings.
+                  Your Google Business Profile has been linked.
+                  {gbpSyncResult
+                    ? ` Pulled in ${gbpSyncResult.reviewsImported} review${gbpSyncResult.reviewsImported !== 1 ? 's' : ''} — your profile score is ${gbpSyncResult.completenessScore}/100.`
+                    : ' Reviews will sync automatically in the background.'}
                 </Text>
                 <Button label="Done" onPress={() => setGbpConnectModal(false)} style={{ marginTop: 8 }} />
               </View>
