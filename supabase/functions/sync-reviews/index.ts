@@ -178,31 +178,19 @@ async function syncViaPlacesApi(
     })
   }
 
-  // Get Place ID
-  let placeId = (gbp.place_id || gbp.gbp_id) as string | null
+  // Get Place ID — only use explicitly saved place_id/gbp_id
+  // Do NOT extract from website URL as it may point to a wrong profile (especially for SABs)
+  const placeId = (gbp.place_id || gbp.gbp_id) as string | null
 
   if (!placeId || !placeId.startsWith('ChI')) {
-    const gbpUrl = (gbp.website || '') as string
-    if (gbpUrl) {
-      const fullUrl = await resolveShortUrl(gbpUrl)
-      placeId = extractPlaceIdFromUrl(fullUrl)
-    }
-
-    if (!placeId) {
-      // Don't auto-search by name — it often finds the wrong profile (especially for SABs).
-      // Require either a saved place_id or Google OAuth connection.
-      return new Response(JSON.stringify({
-        error: 'No Google Place ID found. Please connect your Google account on the SEO page, or paste your Google Maps link to your business.',
-        needsConnection: true,
-      }), {
-        status: 404,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      })
-    }
-
-    if (placeId) {
-      await supabase.from('gbp_profiles').update({ gbp_id: placeId }).eq('company_id', companyId)
-    }
+    // Require either a saved place_id or Google OAuth connection.
+    return new Response(JSON.stringify({
+      error: 'No Google Place ID found. Please connect your Google account on the SEO page to sync reviews.',
+      needsConnection: true,
+    }), {
+      status: 404,
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+    })
   }
 
   if (!placeId) {
