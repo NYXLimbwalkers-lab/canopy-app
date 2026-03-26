@@ -60,6 +60,7 @@ export const Colors = {
 
 export function getThemeColors(isDark: boolean) {
   return {
+    ...Colors,
     background: isDark ? Colors.dark.background : Colors.background,
     surface: isDark ? Colors.dark.surface : Colors.surface,
     surfaceSecondary: isDark ? Colors.dark.surfaceSecondary : Colors.surfaceSecondary,
@@ -68,7 +69,6 @@ export function getThemeColors(isDark: boolean) {
     text: isDark ? Colors.dark.text : Colors.text,
     textSecondary: isDark ? Colors.dark.textSecondary : Colors.textSecondary,
     textTertiary: isDark ? Colors.dark.textTertiary : Colors.textTertiary,
-    ...Colors,
   };
 }
 
