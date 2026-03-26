@@ -299,18 +299,23 @@ export default function LeadsScreen() {
 
   const fetchLeads = useCallback(async () => {
     if (!company) return;
-    const { data } = await supabase
+    const { data, error } = await supabase
       .from('leads')
       .select('*')
       .eq('company_id', company.id)
       .order('created_at', { ascending: false });
+    if (error) throw error;
     setLeads(data ?? []);
   }, [company]);
 
   const refresh = useCallback(async () => {
     setRefreshing(true);
-    await fetchLeads();
-    setRefreshing(false);
+    try {
+      await fetchLeads();
+    } catch {}
+    finally {
+      setRefreshing(false);
+    }
   }, [fetchLeads]);
 
   useEffect(() => {
@@ -350,10 +355,19 @@ export default function LeadsScreen() {
   };
 
   const handleStatusChange = async (id: string, status: LeadStatus) => {
+    const prevStatus = leads.find(l => l.id === id)?.status;
     setLeads(prev => prev.map(l => l.id === id ? { ...l, status } : l));
     // Keep selected lead in sync
     setSelectedLead(prev => prev?.id === id ? { ...prev, status } : prev);
-    await supabase.from('leads').update({ status }).eq('id', id);
+    const { error } = await supabase.from('leads').update({ status }).eq('id', id);
+    if (error) {
+      // Rollback optimistic update on failure
+      if (prevStatus) {
+        setLeads(prev => prev.map(l => l.id === id ? { ...l, status: prevStatus } : l));
+        setSelectedLead(prev => prev?.id === id ? { ...prev, status: prevStatus } : prev);
+      }
+      return;
+    }
 
     // When booked, generate review request
     if (status === 'booked' && isAIConfigured()) {

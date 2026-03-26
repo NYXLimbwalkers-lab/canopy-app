@@ -262,7 +262,11 @@ export default function SettingsScreen() {
           style: 'destructive',
           onPress: async () => {
             const table = type === 'ad' ? 'ad_accounts' : 'social_connections';
-            await supabase.from(table).delete().eq('id', id);
+            const { error } = await supabase.from(table).delete().eq('id', id);
+            if (error) {
+              crossAlert('Error', 'Failed to disconnect. Please try again.');
+              return;
+            }
             await fetchConnections();
           },
         },

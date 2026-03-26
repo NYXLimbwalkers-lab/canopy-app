@@ -66,8 +66,12 @@ export default function DashboardScreen() {
 
   const refresh = useCallback(async () => {
     setRefreshing(true);
-    await fetchData();
-    setRefreshing(false);
+    try {
+      await fetchData();
+    } catch {}
+    finally {
+      setRefreshing(false);
+    }
   }, [fetchData]);
 
   const fetchBriefing = useCallback(async (leadsToday = 0, adSpend = 0) => {
