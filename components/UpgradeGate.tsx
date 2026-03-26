@@ -4,7 +4,7 @@ import { router } from 'expo-router';
 import { Colors } from '@/constants/Colors';
 import { Theme } from '@/constants/Theme';
 import { useAuthStore } from '@/lib/stores/authStore';
-import { canAccess, trialDaysRemaining } from '@/lib/cashapp';
+import { canAccess, trialDaysRemaining } from '@/lib/stripe';
 
 interface Props {
   children: React.ReactNode;
@@ -36,7 +36,7 @@ export function UpgradeGate({ children }: Props) {
     <View style={styles.gate}>
       <Text style={styles.lockEmoji}>🔒</Text>
       <Text style={styles.gateTitle}>Subscribe to access this</Text>
-      <Text style={styles.gateDesc}>$50/month · 7-day free trial · Everything included.</Text>
+      <Text style={styles.gateDesc}>$99/month · 7-day free trial · Everything included.</Text>
       <TouchableOpacity style={styles.upgradeBtn} onPress={() => router.push('/(tabs)/billing' as any)}>
         <Text style={styles.upgradeBtnText}>View plan →</Text>
       </TouchableOpacity>

@@ -19,18 +19,27 @@ Deno.serve(async (req: Request) => {
   }
 
   try {
-    const { planId, companyId, email, priceId } = await req.json()
+    const { companyId, email } = await req.json()
 
-    if (!companyId || !email || !priceId) {
-      return new Response(JSON.stringify({ error: 'Missing required fields: companyId, email, priceId' }), {
+    if (!companyId || !email) {
+      return new Response(JSON.stringify({ error: 'Missing required fields: companyId, email' }), {
         status: 400,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       })
     }
 
     const stripeSecretKey = Deno.env.get('STRIPE_SECRET_KEY')
+    const priceId = Deno.env.get('STRIPE_PRICE_ID')
+
     if (!stripeSecretKey) {
       return new Response(JSON.stringify({ error: 'Stripe secret key not configured' }), {
+        status: 500,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      })
+    }
+
+    if (!priceId) {
+      return new Response(JSON.stringify({ error: 'Stripe price ID not configured' }), {
         status: 500,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       })
@@ -41,7 +50,7 @@ Deno.serve(async (req: Request) => {
       httpClient: Stripe.createFetchHttpClient(),
     })
 
-    const appUrl = Deno.env.get('APP_URL') ?? 'https://app.canopy.com'
+    const appUrl = Deno.env.get('APP_URL') ?? 'https://canopy-app-ten.vercel.app'
 
     const checkoutSession = await stripe.checkout.sessions.create({
       mode: 'subscription',
@@ -54,13 +63,12 @@ Deno.serve(async (req: Request) => {
       customer_email: email,
       payment_method_types: ['card', 'cashapp'],
       subscription_data: {
-        trial_period_days: 14,
+        trial_period_days: 7,
       },
-      success_url: `${appUrl}/settings/billing?checkout=success&session_id={CHECKOUT_SESSION_ID}`,
-      cancel_url: `${appUrl}/settings/billing?checkout=canceled`,
+      success_url: `${appUrl}/billing?checkout=success&session_id={CHECKOUT_SESSION_ID}`,
+      cancel_url: `${appUrl}/billing?checkout=canceled`,
       metadata: {
         companyId,
-        planId: planId ?? '',
       },
     })
 

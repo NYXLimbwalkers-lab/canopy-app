@@ -20,7 +20,7 @@ import { Colors } from '@/constants/Colors';
 import { Theme } from '@/constants/Theme';
 import { useAuthStore } from '@/lib/stores/authStore';
 import { supabase } from '@/lib/supabase';
-import { trialDaysRemaining, PLANS } from '@/lib/cashapp';
+import { trialDaysRemaining, PLANS } from '@/lib/stripe';
 import { crossAlert } from '@/lib/crossAlert';
 
 const AI_KEY_STORAGE = 'EXPO_PUBLIC_OPENROUTER_API_KEY';
