@@ -6,25 +6,7 @@ import { Theme } from '@/constants/Theme';
 import { Button } from '@/components/ui/Button';
 import { useAuthStore } from '@/lib/stores/authStore';
 import { supabase } from '@/lib/supabase';
-
-function crossAlert(title: string, message: string, buttons?: Array<{ text: string; style?: string; onPress?: () => void }>) {
-  if (Platform.OS === 'web') {
-    const destructiveBtn = buttons?.find((b) => b.style === 'destructive');
-    const cancelBtn = buttons?.find((b) => b.style === 'cancel');
-    const actionBtn = destructiveBtn || buttons?.find((b) => b.style !== 'cancel');
-    if (actionBtn && cancelBtn) {
-      const confirmed = window.confirm(`${title}\n\n${message}`);
-      if (confirmed) actionBtn.onPress?.();
-    } else if (actionBtn) {
-      window.alert(`${title}\n\n${message}`);
-      actionBtn.onPress?.();
-    } else {
-      window.alert(`${title}\n\n${message}`);
-    }
-  } else {
-    crossAlert(title, message, buttons as any);
-  }
-}
+import { crossAlert } from '@/lib/crossAlert';
 
 export default function FirstCampaignStep() {
   const { company, updateOnboardingStep } = useAuthStore();

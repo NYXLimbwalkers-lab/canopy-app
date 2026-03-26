@@ -6,25 +6,7 @@ import { Theme } from '@/constants/Theme';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { useAuthStore } from '@/lib/stores/authStore';
-
-function crossAlert(title: string, message: string, buttons?: Array<{ text: string; style?: string; onPress?: () => void }>) {
-  if (Platform.OS === 'web') {
-    const destructiveBtn = buttons?.find((b) => b.style === 'destructive');
-    const cancelBtn = buttons?.find((b) => b.style === 'cancel');
-    const actionBtn = destructiveBtn || buttons?.find((b) => b.style !== 'cancel');
-    if (actionBtn && cancelBtn) {
-      const confirmed = window.confirm(`${title}\n\n${message}`);
-      if (confirmed) actionBtn.onPress?.();
-    } else if (actionBtn) {
-      window.alert(`${title}\n\n${message}`);
-      actionBtn.onPress?.();
-    } else {
-      window.alert(`${title}\n\n${message}`);
-    }
-  } else {
-    crossAlert(title, message, buttons as any);
-  }
-}
+import { crossAlert } from '@/lib/crossAlert';
 
 const SERVICES = ['Tree Removal', 'Tree Trimming', 'Stump Grinding', 'Emergency Storm Response', 'Land Clearing', 'Cabling & Bracing', 'Tree Health Assessment', 'Lot Clearing'];
 const RADII = [10, 15, 25, 35, 50, 75];
