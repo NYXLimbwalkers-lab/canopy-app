@@ -1,10 +1,10 @@
 // Canopy Billing — Cash App Pay
-// Single flat plan: $50/month, 7-day free trial, everything included
+// Single flat plan: $99/month, 7-day free trial, everything included
 
 export const PLAN = {
   id: 'pro' as const,
   name: 'Canopy Pro',
-  price: 50,
+  price: 99,
   interval: 'month',
   trialDays: 7,
   description: 'Everything you need to grow your tree service business',

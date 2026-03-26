@@ -7,17 +7,6 @@ const corsHeaders = {
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
 }
 
-function getPlanFromPriceId(priceId: string): 'starter' | 'growth' | 'pro' | null {
-  const starterPriceId = Deno.env.get('STRIPE_STARTER_PRICE_ID')
-  const growthPriceId = Deno.env.get('STRIPE_GROWTH_PRICE_ID')
-  const proPriceId = Deno.env.get('STRIPE_PRO_PRICE_ID')
-
-  if (priceId === starterPriceId) return 'starter'
-  if (priceId === growthPriceId) return 'growth'
-  if (priceId === proPriceId) return 'pro'
-  return null
-}
-
 Deno.serve(async (req: Request) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { status: 204, headers: corsHeaders })
@@ -82,20 +71,10 @@ Deno.serve(async (req: Request) => {
           break
         }
 
-        let plan: 'starter' | 'growth' | 'pro' = 'starter'
-
-        if (session.subscription) {
-          const subscription = await stripe.subscriptions.retrieve(session.subscription as string)
-          const priceId = subscription.items.data[0]?.price?.id
-          if (priceId) {
-            plan = getPlanFromPriceId(priceId) ?? 'starter'
-          }
-        }
-
         const { error } = await supabase
           .from('companies')
           .update({
-            plan,
+            plan: 'pro',
             stripe_customer_id: session.customer as string,
             stripe_subscription_id: session.subscription as string,
             subscription_status: 'active',
