@@ -12,6 +12,7 @@ import {
   Platform,
   ActivityIndicator,
   Linking,
+  Alert,
 } from 'react-native';
 import { Colors } from '@/constants/Colors';
 import { Theme } from '@/constants/Theme';
@@ -555,7 +556,46 @@ export default function LeadsScreen() {
               <Text style={styles.aiBannerMessage} selectable>
                 {reviewRequest.message}
               </Text>
-              <Text style={styles.reviewRequestHint}>Replace [LINK] with your Google review link</Text>
+              {(() => {
+                const lead = leads.find(l => l.id === reviewRequest.leadId);
+                const hasPhone = lead?.phone && lead.phone.length >= 7;
+                return hasPhone ? (
+                  <TouchableOpacity
+                    style={[styles.dismissBtn, { backgroundColor: Colors.primary }]}
+                    onPress={async () => {
+                      try {
+                        const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL;
+                        const supabaseKey = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY;
+                        const resp = await fetch(`${supabaseUrl}/functions/v1/send-review-request`, {
+                          method: 'POST',
+                          headers: {
+                            'Content-Type': 'application/json',
+                            'Authorization': `Bearer ${supabaseKey}`,
+                          },
+                          body: JSON.stringify({
+                            companyId: company!.id,
+                            customerPhone: lead!.phone,
+                            customerName: lead!.name,
+                          }),
+                        });
+                        const result = await resp.json();
+                        if (result.success) {
+                          Alert.alert('Sent!', `Review request SMS sent to ${lead!.name}`);
+                          setReviewRequest(null);
+                        } else {
+                          Alert.alert('Error', result.error || 'Failed to send SMS');
+                        }
+                      } catch (err: any) {
+                        Alert.alert('Error', err.message || 'Failed to send SMS');
+                      }
+                    }}
+                  >
+                    <Text style={[styles.dismissBtnText, { color: '#fff' }]}>📱 Send SMS to {lead!.name}</Text>
+                  </TouchableOpacity>
+                ) : (
+                  <Text style={styles.reviewRequestHint}>Add a phone number to send via SMS</Text>
+                );
+              })()}
               <TouchableOpacity style={styles.dismissBtn} onPress={() => setReviewRequest(null)}>
                 <Text style={styles.dismissBtnText}>Dismiss</Text>
               </TouchableOpacity>
