@@ -444,14 +444,25 @@ function ContentCalendarCard({ data }: { data: Array<{ day: number; videoType: s
   );
 }
 
-function MarketStrategyCard({ data }: { data: string[] }) {
+function MarketStrategyCard({ data }: { data: any[] }) {
+  // Safely convert each point to a string — AI sometimes returns objects instead of strings
+  const safePoints: string[] = (data ?? []).map(point => {
+    if (typeof point === 'string') return point;
+    if (point && typeof point === 'object') {
+      // Handle objects like {"🎯 Local SEO Push": "description"}
+      const keys = Object.keys(point);
+      return keys.map(k => `${k}: ${point[k]}`).join(' — ');
+    }
+    return String(point ?? '');
+  });
+
   return (
     <View style={styles.resultCard}>
       <View style={styles.resultCardHeader}>
         <Text style={styles.resultCardIcon}>📊</Text>
         <Text style={styles.resultCardTitle}>30-Day Market Strategy</Text>
       </View>
-      {data.map((point, i) => (
+      {safePoints.map((point, i) => (
         <View key={i} style={styles.strategyItem}>
           <Text style={styles.strategyText}>{point}</Text>
         </View>
@@ -459,7 +470,7 @@ function MarketStrategyCard({ data }: { data: string[] }) {
       <TouchableOpacity
         style={styles.fullCopyBtn}
         onPress={() => {
-          Clipboard.setStringAsync(data.join('\n\n'));
+          Clipboard.setStringAsync(safePoints.join('\n\n'));
           crossAlert('Copied', 'Strategy copied to clipboard');
         }}
       >
@@ -472,19 +483,25 @@ function MarketStrategyCard({ data }: { data: string[] }) {
 // ─── Day Separator Component ─────────────────────────────────────────────────
 
 function DaySeparator({ date }: { date: string }) {
-  const d = new Date(date);
-  const today = new Date();
-  const yesterday = new Date();
-  yesterday.setDate(yesterday.getDate() - 1);
+  // Use state to avoid hydration mismatch with date-dependent labels
+  const [label, setLabel] = useState('');
 
-  let label: string;
-  if (d.toDateString() === today.toDateString()) {
-    label = 'Today';
-  } else if (d.toDateString() === yesterday.toDateString()) {
-    label = 'Yesterday';
-  } else {
-    label = d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
-  }
+  useEffect(() => {
+    const d = new Date(date);
+    const today = new Date();
+    const yesterday = new Date();
+    yesterday.setDate(yesterday.getDate() - 1);
+
+    if (d.toDateString() === today.toDateString()) {
+      setLabel('Today');
+    } else if (d.toDateString() === yesterday.toDateString()) {
+      setLabel('Yesterday');
+    } else {
+      setLabel(d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' }));
+    }
+  }, [date]);
+
+  if (!label) return null;
 
   return (
     <View style={styles.daySeparator}>
@@ -1518,7 +1535,7 @@ export default function AIExpertScreen() {
                           </View>
                         )}
                         <Text style={[styles.bubbleText, msg.role === 'user' ? styles.userBubbleText : styles.aiBubbleText]}>
-                          {msg.content}
+                          {typeof msg.content === 'string' ? msg.content : JSON.stringify(msg.content)}
                         </Text>
                       </View>
 
