@@ -21,6 +21,11 @@ Notifications.setNotificationHandler({
  */
 export async function registerForPushNotifications(userId: string): Promise<string | null> {
   try {
+    // Push notifications are not supported on web
+    if (Platform.OS === 'web') {
+      return null;
+    }
+
     // Push notifications only work on physical devices
     if (!Device.isDevice) {
       console.log('Push notifications require a physical device');

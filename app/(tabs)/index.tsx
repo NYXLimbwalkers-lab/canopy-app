@@ -94,8 +94,12 @@ export default function DashboardScreen() {
     if (data) fetchBriefing(data.leadsToday, data.adSpendToday);
   }, [data, fetchBriefing]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const getHour = () => new Date().getHours();
-  const greeting = getHour() < 12 ? 'Good morning' : getHour() < 17 ? 'Good afternoon' : 'Good evening';
+  // Use state for greeting to avoid SSR/client hydration mismatch (React Error #418)
+  const [greeting, setGreeting] = useState('Hello');
+  useEffect(() => {
+    const hour = new Date().getHours();
+    setGreeting(hour < 12 ? 'Good morning' : hour < 17 ? 'Good afternoon' : 'Good evening');
+  }, []);
 
   const sourceColor = (source: string): 'success' | 'info' | 'warning' | 'neutral' => {
     const map: Record<string, 'success' | 'info' | 'warning' | 'neutral'> = {
