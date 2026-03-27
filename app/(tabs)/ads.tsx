@@ -477,11 +477,11 @@ export default function AdsScreen() {
       return;
     }
     // Validate format
-    if (connectingPlatform === 'google_ads' && !/^\d{3}-\d{3}-\d{4}$/.test(trimmed) && !/^\d{10}$/.test(trimmed)) {
+    if ((connectingPlatform === 'google' || connectingPlatform === 'google_ads') && !/^\d{3}-\d{3}-\d{4}$/.test(trimmed) && !/^\d{10}$/.test(trimmed)) {
       setSaveError('Google Ads ID format: 123-456-7890 or 1234567890');
       return;
     }
-    if (connectingPlatform === 'facebook_ads' && !/^(act_)?\d+$/.test(trimmed)) {
+    if ((connectingPlatform === 'facebook' || connectingPlatform === 'facebook_ads') && !/^(act_)?\d+$/.test(trimmed)) {
       setSaveError('Facebook Ads ID format: act_123456789 or 123456789');
       return;
     }
