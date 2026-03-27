@@ -13,12 +13,24 @@ app.use(express.json({ limit: '10mb' }));
 const TMP = '/tmp/renders';
 if (!fs.existsSync(TMP)) fs.mkdirSync(TMP, { recursive: true });
 
-// Health check
+const RENDER_API_KEY = process.env.RENDER_API_KEY;
+
+// API key auth middleware — skips health checks
+function requireApiKey(req, res, next) {
+  if (!RENDER_API_KEY) return next(); // skip if not configured (dev mode)
+  const key = req.headers['x-api-key'] || req.headers['authorization']?.replace('Bearer ', '');
+  if (key !== RENDER_API_KEY) {
+    return res.status(401).json({ error: 'Unauthorized: invalid or missing API key' });
+  }
+  next();
+}
+
+// Health check (no auth required)
 app.get('/', (_req, res) => res.json({ status: 'ok', service: 'canopy-render' }));
 app.get('/health', (_req, res) => res.json({ status: 'ok' }));
 
 // Main render endpoint
-app.post('/render', async (req, res) => {
+app.post('/render', requireApiKey, async (req, res) => {
   const {
     videoId,
     audioUrl,

@@ -225,9 +225,14 @@ async function processVideo(
     duration: segDuration,
   }))
 
+  const renderApiKey = Deno.env.get('RENDER_API_KEY') || ''
+
   const renderResp = await fetch(`${renderServerUrl}/render`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: {
+      'Content-Type': 'application/json',
+      ...(renderApiKey ? { 'X-Api-Key': renderApiKey } : {}),
+    },
     body: JSON.stringify({
       videoId,
       audioUrl,

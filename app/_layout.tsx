@@ -49,9 +49,10 @@ export default function RootLayout() {
 
     const inAuth       = segments[0] === '(auth)';
     const inOnboarding = segments[0] === '(onboarding)';
+    const inPublic     = segments[0] === 'privacy' || segments[0] === 'terms';
 
     if (!session) {
-      if (!inAuth) router.replace('/(auth)/login');
+      if (!inAuth && !inPublic) router.replace('/(auth)/login');
     } else if (company && !company.onboarding_completed_at) {
       // Only jump to welcome if not already somewhere inside onboarding
       if (!inOnboarding) router.replace('/(onboarding)/welcome');
@@ -65,6 +66,8 @@ export default function RootLayout() {
       <Stack.Screen name="(tabs)" />
       <Stack.Screen name="(auth)" />
       <Stack.Screen name="(onboarding)" />
+      <Stack.Screen name="privacy" />
+      <Stack.Screen name="terms" />
     </Stack>
   );
 }
