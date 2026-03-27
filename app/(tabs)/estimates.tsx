@@ -1983,7 +1983,12 @@ export default function EstimatesScreen() {
       .eq('company_id', company.id)
       .order('created_at', { ascending: false });
     if (error) { console.error('Failed to fetch estimates:', error.message); return; }
-    setEstimates(data ?? []);
+    // Normalize 'rejected' (DB legacy) to 'declined' (UI label)
+    const normalized = (data ?? []).map(e => ({
+      ...e,
+      status: e.status === 'rejected' ? 'declined' : e.status,
+    }));
+    setEstimates(normalized);
   }, [company]);
 
   const refresh = useCallback(async () => {

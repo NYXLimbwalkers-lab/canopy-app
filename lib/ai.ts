@@ -1,14 +1,53 @@
 // Canopy AI Engine — OpenRouter integration
 // Routes to Claude for strategy/copy, GPT-4o for structured tasks
 
-const OPENROUTER_BASE = 'https://openrouter.ai/api/v1';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
-function getKey(): string {
+const OPENROUTER_BASE = 'https://openrouter.ai/api/v1';
+const AI_KEY_STORAGE = 'EXPO_PUBLIC_OPENROUTER_API_KEY';
+
+// In-memory cache so we don't hit AsyncStorage on every call
+let cachedKey: string | null = null;
+let keyLoaded = false;
+
+// Eagerly load the key from AsyncStorage at module init
+(async () => {
+  try {
+    const stored = await AsyncStorage.getItem(AI_KEY_STORAGE);
+    if (stored) cachedKey = stored;
+  } catch {}
+  keyLoaded = true;
+})();
+
+/** Ensure the key has been loaded from AsyncStorage (for use before AI calls) */
+async function ensureKeyLoaded(): Promise<void> {
+  if (keyLoaded) return;
+  try {
+    const stored = await AsyncStorage.getItem(AI_KEY_STORAGE);
+    if (stored) cachedKey = stored;
+  } catch {}
+  keyLoaded = true;
+}
+
+function getEnvKey(): string {
   return process.env.EXPO_PUBLIC_OPENROUTER_API_KEY ?? '';
 }
 
+async function getKey(): Promise<string> {
+  await ensureKeyLoaded();
+  return cachedKey || getEnvKey();
+}
+
+/** Update the OpenRouter key in both in-memory cache and AsyncStorage */
+export async function setOpenRouterKey(key: string): Promise<void> {
+  cachedKey = key;
+  keyLoaded = true;
+  await AsyncStorage.setItem(AI_KEY_STORAGE, key);
+}
+
+/** Check if AI is configured. Uses cached key + env fallback (synchronous for UI convenience). */
 export function isAIConfigured(): boolean {
-  return Boolean(getKey());
+  return Boolean(cachedKey || getEnvKey());
 }
 
 interface ChatMessage {
@@ -29,8 +68,8 @@ const MODEL_MAP = {
 };
 
 export async function aiChat(messages: ChatMessage[], options: AIOptions = {}): Promise<string> {
-  const key = getKey();
-  if (!key) throw new Error('OpenRouter key not configured. Add EXPO_PUBLIC_OPENROUTER_API_KEY to .env');
+  const key = await getKey();
+  if (!key) throw new Error('OpenRouter key not configured. Add your key in Settings or set EXPO_PUBLIC_OPENROUTER_API_KEY in .env');
 
   const model = MODEL_MAP[options.model ?? 'fast'];
 

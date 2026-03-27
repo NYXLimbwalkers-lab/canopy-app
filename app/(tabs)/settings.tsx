@@ -26,6 +26,7 @@ import { crossAlert } from '@/lib/crossAlert';
 import { startFacebookOAuth, isFacebookConnected } from '@/lib/meta';
 import { startTikTokOAuth, isTikTokConnected } from '@/lib/tiktok';
 import { startYouTubeOAuth, isYouTubeConnected } from '@/lib/youtube';
+import { setOpenRouterKey as setAIOpenRouterKey } from '@/lib/ai';
 
 const AI_KEY_STORAGE = 'EXPO_PUBLIC_OPENROUTER_API_KEY';
 const AI_MODEL_STORAGE = 'CANOPY_AI_MODEL_PREF';
@@ -264,7 +265,7 @@ export default function SettingsScreen() {
   const handleSaveAI = useCallback(async () => {
     setSavingAI(true);
     try {
-      await AsyncStorage.setItem(AI_KEY_STORAGE, openRouterKey.trim());
+      await setAIOpenRouterKey(openRouterKey.trim());
       await AsyncStorage.setItem(AI_MODEL_STORAGE, aiModel);
       crossAlert('Saved', 'AI configuration saved.');
     } catch {
