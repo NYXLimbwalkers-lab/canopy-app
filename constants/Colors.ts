@@ -1,47 +1,48 @@
 // Canopy SaaS — Design System Colors
-// Primary brand: Forest green + amber gold
+// High-contrast, sunlight-readable theme
+// Primary brand: Bold green + bright orange
 
 export const Colors = {
   // Brand
-  primary: '#2D6A4F',
-  primaryLight: '#40916C',
-  primaryDark: '#1B4332',
-  accent: '#F4A261',
-  accentDark: '#E76F51',
+  primary: '#1A7742',
+  primaryLight: '#22A05A',
+  primaryDark: '#0F5C30',
+  accent: '#FF8C00',
+  accentDark: '#E6700A',
 
   // AI accent
-  ai: '#7C3AED',
+  ai: '#8B5CF6',
   aiLight: '#A78BFA',
 
   // Semantic
-  success: '#22C55E',
-  successBg: '#DCFCE7',
+  success: '#16A34A',
+  successBg: '#D1FAE5',
   successDark: '#15803D',
-  warning: '#F59E0B',
-  warningBg: '#FEF3C7',
+  warning: '#EA8C00',
+  warningBg: '#FFF3CD',
   warningDark: '#B45309',
-  danger: '#EF4444',
+  danger: '#DC2626',
   dangerBg: '#FEE2E2',
-  dangerDark: '#DC2626',
-  info: '#3B82F6',
+  dangerDark: '#B91C1C',
+  info: '#2563EB',
   infoBg: '#DBEAFE',
   infoDark: '#1D4ED8',
 
   // AI
   aiBg: '#EDE9FE',
 
-  // Neutrals (dark forest theme)
-  background: '#0E1A14',
-  surface: '#142B1F',
-  surfaceSecondary: '#1A3326',
-  border: '#2A4035',
-  borderStrong: '#3A5548',
-  text: '#F0F9F4',
-  textSecondary: '#8BAF9A',
-  textTertiary: '#5C7A6B',
-  textInverse: '#0E1A14',
+  // Neutrals — HIGH CONTRAST, sunlight-readable
+  background: '#FFFFFF',
+  surface: '#F8FAFB',
+  surfaceSecondary: '#EFF3F5',
+  border: '#D1D9E0',
+  borderStrong: '#B0BEC5',
+  text: '#111827',
+  textSecondary: '#4B5563',
+  textTertiary: '#6B7280',
+  textInverse: '#FFFFFF',
 
-  // Dark mode surfaces
+  // Dark mode surfaces (kept for optional dark mode toggle later)
   dark: {
     background: '#0A0F0D',
     surface: '#111B16',
@@ -54,15 +55,15 @@ export const Colors = {
   },
 
   // Pipeline status colors
-  statusNew: '#3B82F6',
-  statusActive: '#F59E0B',
-  statusBooked: '#8B5CF6',
-  statusComplete: '#22C55E',
-  statusCanceled: '#EF4444',
+  statusNew: '#2563EB',
+  statusActive: '#EA8C00',
+  statusBooked: '#7C3AED',
+  statusComplete: '#16A34A',
+  statusCanceled: '#DC2626',
 
   // Overlays
   overlay: 'rgba(0,0,0,0.5)',
-  overlayLight: 'rgba(0,0,0,0.15)',
+  overlayLight: 'rgba(0,0,0,0.08)',
 };
 
 export function getThemeColors(isDark: boolean) {

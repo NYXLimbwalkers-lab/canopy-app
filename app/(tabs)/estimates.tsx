@@ -116,11 +116,11 @@ const HAZARD_FACTORS = [
 ];
 
 const CLEANUP_OPTIONS = [
-  { label: 'Full Cleanup & Haul', key: 'full' },
-  { label: 'Chip on Site', key: 'chip' },
-  { label: 'Stack Firewood', key: 'firewood' },
-  { label: 'Leave Logs for Customer', key: 'leave' },
-  { label: 'No Cleanup (customer handles)', key: 'none' },
+  { label: 'Full Cleanup & Haul', icon: '🧹', key: 'full' },
+  { label: 'Chip on Site', icon: '🪵', key: 'chip' },
+  { label: 'Stack Firewood', icon: '🪓', key: 'firewood' },
+  { label: 'Leave Logs', icon: '🪵', key: 'leave' },
+  { label: 'No Cleanup', icon: '🚫', key: 'none' },
 ];
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -167,74 +167,6 @@ const badgeStyles = StyleSheet.create({
   icon: { fontSize: 11 },
   text: {
     fontSize: Theme.font.size.caption,
-    fontWeight: Theme.font.weight.semibold,
-  },
-});
-
-// ─── Chip Selector Component ─────────────────────────────────────────────────
-
-function ChipSelector<T extends { label: string; key?: string }>({
-  items,
-  selected,
-  onToggle,
-  renderItem,
-  multiSelect = true,
-}: {
-  items: T[];
-  selected: string[];
-  onToggle: (key: string) => void;
-  renderItem?: (item: T, isSelected: boolean) => React.ReactNode;
-  multiSelect?: boolean;
-}) {
-  return (
-    <View style={chipStyles.container}>
-      {items.map((item) => {
-        const key = (item as any).key || item.label;
-        const isSelected = selected.includes(key);
-        if (renderItem) return <View key={key}>{renderItem(item, isSelected)}</View>;
-        return (
-          <TouchableOpacity
-            key={key}
-            style={[chipStyles.chip, isSelected && chipStyles.chipActive]}
-            onPress={() => onToggle(key)}
-            activeOpacity={0.7}
-          >
-            {(item as any).icon && <Text style={chipStyles.chipIcon}>{(item as any).icon}</Text>}
-            <Text style={[chipStyles.chipText, isSelected && chipStyles.chipTextActive]}>
-              {item.label}
-            </Text>
-          </TouchableOpacity>
-        );
-      })}
-    </View>
-  );
-}
-
-const chipStyles = StyleSheet.create({
-  container: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
-  chip: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 5,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    borderRadius: Theme.radius.full,
-    backgroundColor: Colors.surface,
-    borderWidth: 1.5,
-    borderColor: Colors.border,
-  },
-  chipActive: {
-    backgroundColor: Colors.primary + '15',
-    borderColor: Colors.primary,
-  },
-  chipIcon: { fontSize: 14 },
-  chipText: {
-    fontSize: 13,
-    fontWeight: Theme.font.weight.medium,
-    color: Colors.textSecondary,
-  },
-  chipTextActive: {
-    color: Colors.primary,
     fontWeight: Theme.font.weight.semibold,
   },
 });
@@ -1294,7 +1226,9 @@ Rules:
   );
 }
 
-// ─── Manual Estimate Modal (with clickable presets) ─────────────────────────
+// ─── POS-Style Estimate Builder (McDonald's register / kiosk) ───────────────
+
+const WIZARD_STEPS = ['Customer', 'Job Type', 'Tree Details', 'Hazards & Cleanup', 'Review & Price'];
 
 function CreateEstimateModal({
   visible,
@@ -1309,29 +1243,33 @@ function CreateEstimateModal({
   companyName: string;
   onCreated: (estimate: Estimate) => void;
 }) {
+  const [step, setStep] = useState(0);
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [showCustomerPicker, setShowCustomerPicker] = useState(false);
   const [selectedCustomerId, setSelectedCustomerId] = useState<string | null>(null);
   const [customerName, setCustomerName] = useState('');
   const [customerEmail, setCustomerEmail] = useState('');
   const [customerPhone, setCustomerPhone] = useState('');
-  const [lineItems, setLineItems] = useState<LineItem[]>([
-    { description: '', qty: 1, rate: 0, amount: 0 },
-  ]);
-  const [notes, setNotes] = useState('');
-  const [taxRate, setTaxRate] = useState('0');
-  const [submitting, setSubmitting] = useState(false);
-  const [generatingPdf, setGeneratingPdf] = useState(false);
 
-  // Preset selections
+  // Job selections
   const [selectedJobs, setSelectedJobs] = useState<string[]>([]);
+
+  // Tree details
   const [selectedTreeTypes, setSelectedTreeTypes] = useState<string[]>([]);
-  const [selectedSize, setSelectedSize] = useState<string[]>([]);
+  const [treeHeight, setTreeHeight] = useState(30);
+  const [treeCount, setTreeCount] = useState(1);
+
+  // Hazards & cleanup
   const [selectedHazards, setSelectedHazards] = useState<string[]>([]);
   const [selectedCleanup, setSelectedCleanup] = useState<string[]>([]);
-  const [treeCount, setTreeCount] = useState('1');
+
+  // AI results
+  const [lineItems, setLineItems] = useState<LineItem[]>([]);
+  const [notes, setNotes] = useState('');
+  const [taxRate, setTaxRate] = useState(0);
   const [aiGenerating, setAiGenerating] = useState(false);
-  const [showPresets, setShowPresets] = useState(true);
+  const [submitting, setSubmitting] = useState(false);
+  const [generatingPdf, setGeneratingPdf] = useState(false);
 
   useEffect(() => {
     if (visible && companyId) {
@@ -1347,21 +1285,21 @@ function CreateEstimateModal({
   }, [visible, companyId]);
 
   const resetForm = () => {
+    setStep(0);
     setSelectedCustomerId(null);
     setCustomerName('');
     setCustomerEmail('');
     setCustomerPhone('');
-    setLineItems([{ description: '', qty: 1, rate: 0, amount: 0 }]);
-    setNotes('');
-    setTaxRate('0');
-    setShowCustomerPicker(false);
     setSelectedJobs([]);
     setSelectedTreeTypes([]);
-    setSelectedSize([]);
+    setTreeHeight(30);
+    setTreeCount(1);
     setSelectedHazards([]);
     setSelectedCleanup([]);
-    setTreeCount('1');
-    setShowPresets(true);
+    setLineItems([]);
+    setNotes('');
+    setTaxRate(0);
+    setShowCustomerPicker(false);
   };
 
   const handleClose = () => {
@@ -1373,10 +1311,101 @@ function CreateEstimateModal({
     setter(list.includes(item) ? list.filter(i => i !== item) : [...list, item]);
   };
 
-  // AI-generate line items from presets
-  const handleAIFromPresets = async () => {
+  const selectCustomer = (customer: Customer) => {
+    setSelectedCustomerId(customer.id);
+    setCustomerName(customer.name);
+    setCustomerEmail(customer.email || '');
+    setCustomerPhone(customer.phone || '');
+    setShowCustomerPicker(false);
+  };
+
+  const filteredCustomers = customerName.trim()
+    ? customers.filter(c => c.name.toLowerCase().includes(customerName.toLowerCase()))
+    : customers;
+
+  // Height label helper
+  const getHeightLabel = (h: number) => {
+    if (h >= 100) return '100ft+';
+    return `${h}ft`;
+  };
+
+  const getSizeCategory = (h: number) => {
+    if (h < 15) return 'Small';
+    if (h < 30) return 'Medium';
+    if (h < 60) return 'Large';
+    if (h < 80) return 'XL';
+    return 'XXL';
+  };
+
+  // Custom slider component — tap-based for gloves
+  const renderHeightSlider = () => {
+    const stops = [5, 10, 15, 20, 25, 30, 40, 50, 60, 70, 80, 90, 100];
+    return (
+      <View style={createStyles.sliderContainer}>
+        <View style={createStyles.sliderValueBox}>
+          <Text style={createStyles.sliderValueText}>{getHeightLabel(treeHeight)}</Text>
+          <Text style={createStyles.sliderSizeLabel}>{getSizeCategory(treeHeight)}</Text>
+        </View>
+        <View style={createStyles.sliderTrack}>
+          {stops.map((val) => {
+            const isActive = treeHeight >= val;
+            const isSelected = treeHeight === val;
+            return (
+              <TouchableOpacity
+                key={val}
+                style={[
+                  createStyles.sliderStop,
+                  isActive && createStyles.sliderStopActive,
+                  isSelected && createStyles.sliderStopSelected,
+                ]}
+                onPress={() => setTreeHeight(val)}
+                activeOpacity={0.7}
+              >
+                <Text style={[
+                  createStyles.sliderStopText,
+                  isActive && createStyles.sliderStopTextActive,
+                ]}>
+                  {val}
+                </Text>
+              </TouchableOpacity>
+            );
+          })}
+        </View>
+      </View>
+    );
+  };
+
+  // Tree count +/- picker
+  const renderTreeCountPicker = () => (
+    <View style={createStyles.counterRow}>
+      <Text style={createStyles.counterLabel}>How many trees?</Text>
+      <View style={createStyles.counterControls}>
+        <TouchableOpacity
+          style={[createStyles.counterBtn, treeCount <= 1 && { opacity: 0.3 }]}
+          onPress={() => setTreeCount(Math.max(1, treeCount - 1))}
+          disabled={treeCount <= 1}
+          activeOpacity={0.7}
+        >
+          <Text style={createStyles.counterBtnText}>-</Text>
+        </TouchableOpacity>
+        <View style={createStyles.counterDisplay}>
+          <Text style={createStyles.counterValue}>{treeCount}</Text>
+        </View>
+        <TouchableOpacity
+          style={createStyles.counterBtn}
+          onPress={() => setTreeCount(treeCount + 1)}
+          activeOpacity={0.7}
+        >
+          <Text style={createStyles.counterBtnText}>+</Text>
+        </TouchableOpacity>
+      </View>
+    </View>
+  );
+
+  // AI Generate from selections
+  const handleAIGenerate = async () => {
     if (selectedJobs.length === 0) {
-      Alert.alert('Select Job Type', 'Pick at least one type of work to do.');
+      Alert.alert('Select Job Type', 'Go back and pick at least one type of work.');
       return;
     }
 
@@ -1389,7 +1418,6 @@ function CreateEstimateModal({
     try {
       const jobLabels = selectedJobs.map(k => JOB_TYPES.find(j => j.key === k)?.label || k).join(', ');
       const treeLabels = selectedTreeTypes.map(t => TREE_TYPES.find(tr => tr.label === t)?.label || t).join(', ');
-      const sizeLabel = selectedSize.map(s => TREE_SIZES.find(sz => sz.key === s)?.label || s).join(', ');
       const hazardLabels = selectedHazards.map(h => HAZARD_FACTORS.find(f => f.key === h)?.label || h).join(', ');
       const cleanupLabels = selectedCleanup.map(c => CLEANUP_OPTIONS.find(o => o.key === c)?.label || c).join(', ');
 
@@ -1397,8 +1425,8 @@ function CreateEstimateModal({
 
 Work type: ${jobLabels}
 Tree species: ${treeLabels || 'Not specified'}
-Tree size: ${sizeLabel || 'Not specified'}
-Number of trees: ${treeCount || '1'}
+Tree height: ${getHeightLabel(treeHeight)} (${getSizeCategory(treeHeight)})
+Number of trees: ${treeCount}
 Hazard factors: ${hazardLabels || 'None'}
 Cleanup: ${cleanupLabels || 'Standard cleanup'}
 
@@ -1434,48 +1462,17 @@ Rules:
       }));
 
       setLineItems(newItems);
-      setShowPresets(false);
+      setTaxRate(7);
     } catch (err: any) {
-      Alert.alert('AI Error', 'Could not generate pricing. Try again or enter manually.');
+      Alert.alert('AI Error', 'Could not generate pricing. Try again.');
     } finally {
       setAiGenerating(false);
     }
   };
 
-  const updateLineItem = (index: number, field: keyof LineItem, value: string) => {
-    setLineItems(prev => {
-      const updated = [...prev];
-      const item = { ...updated[index] };
-      if (field === 'description') item.description = value;
-      else if (field === 'qty') item.qty = parseFloat(value) || 0;
-      else if (field === 'rate') item.rate = parseFloat(value) || 0;
-      item.amount = item.qty * item.rate;
-      updated[index] = item;
-      return updated;
-    });
-  };
-
-  const addLineItem = () => {
-    setLineItems(prev => [...prev, { description: '', qty: 1, rate: 0, amount: 0 }]);
-  };
-
-  const removeLineItem = (index: number) => {
-    if (lineItems.length <= 1) return;
-    setLineItems(prev => prev.filter((_, i) => i !== index));
-  };
-
   const subtotal = lineItems.reduce((sum, item) => sum + item.amount, 0);
-  const taxRateNum = parseFloat(taxRate) || 0;
-  const taxAmount = subtotal * (taxRateNum / 100);
+  const taxAmount = subtotal * (taxRate / 100);
   const total = subtotal + taxAmount;
-
-  const selectCustomer = (customer: Customer) => {
-    setSelectedCustomerId(customer.id);
-    setCustomerName(customer.name);
-    setCustomerEmail(customer.email || '');
-    setCustomerPhone(customer.phone || '');
-    setShowCustomerPicker(false);
-  };
 
   const handleSave = async (generatePdf: boolean) => {
     if (!customerName.trim()) {
@@ -1484,7 +1481,7 @@ Rules:
     }
     const validItems = lineItems.filter(item => item.description.trim());
     if (validItems.length === 0) {
-      Alert.alert('Required', 'Please add at least one line item.');
+      Alert.alert('Required', 'Please add at least one line item. Tap "Generate Pricing with AI" first.');
       return;
     }
 
@@ -1527,7 +1524,7 @@ Rules:
           line_items: itemsToSave,
           subtotal,
           tax: taxAmount,
-          tax_rate: taxRateNum,
+          tax_rate: taxRate,
           total,
           notes: notes.trim() || null,
           status: 'draft',
@@ -1559,317 +1556,397 @@ Rules:
     }
   };
 
-  const filteredCustomers = customerName.trim()
-    ? customers.filter(c => c.name.toLowerCase().includes(customerName.toLowerCase()))
-    : customers;
+  // Step validation
+  const canGoNext = () => {
+    if (step === 0) return customerName.trim().length > 0;
+    if (step === 1) return selectedJobs.length > 0;
+    if (step === 2) return true; // tree details optional
+    if (step === 3) return true; // hazards optional
+    return true;
+  };
 
-  const hasPresetSelections = selectedJobs.length > 0;
+  const goNext = () => {
+    if (step < WIZARD_STEPS.length - 1) {
+      const nextStep = step + 1;
+      setStep(nextStep);
+      // Auto-trigger AI when arriving at review step
+      if (nextStep === 4 && lineItems.length === 0) {
+        handleAIGenerate();
+      }
+    }
+  };
+
+  const goBack = () => {
+    if (step > 0) setStep(step - 1);
+  };
+
+  // ─── Big Grid Button ─────────────────────────────────────────────────────
+  const renderGridButton = (
+    key: string,
+    label: string,
+    icon: string,
+    isSelected: boolean,
+    onPress: () => void,
+  ) => (
+    <TouchableOpacity
+      key={key}
+      style={[createStyles.gridBtn, isSelected && createStyles.gridBtnSelected]}
+      onPress={onPress}
+      activeOpacity={0.7}
+    >
+      <Text style={createStyles.gridBtnIcon}>{icon}</Text>
+      <Text style={[createStyles.gridBtnLabel, isSelected && createStyles.gridBtnLabelSelected]}>
+        {label}
+      </Text>
+    </TouchableOpacity>
+  );
+
+  // ─── Step Renders ────────────────────────────────────────────────────────
+
+  const renderStep0Customer = () => (
+    <View style={createStyles.stepBody}>
+      <Text style={createStyles.stepTitle}>Who is this for?</Text>
+      <Text style={createStyles.stepSubtitle}>Enter or pick a customer</Text>
+
+      <View style={createStyles.inputGroup}>
+        <Text style={createStyles.inputLabel}>Name *</Text>
+        <TextInput
+          style={createStyles.bigInput}
+          value={customerName}
+          onChangeText={v => {
+            setCustomerName(v);
+            setSelectedCustomerId(null);
+            if (v.trim().length > 0 && customers.length > 0) {
+              setShowCustomerPicker(true);
+            } else {
+              setShowCustomerPicker(false);
+            }
+          }}
+          placeholder="Customer name"
+          placeholderTextColor={Colors.textTertiary}
+          autoFocus
+        />
+      </View>
+
+      {showCustomerPicker && filteredCustomers.length > 0 && (
+        <View style={createStyles.pickerDropdown}>
+          {filteredCustomers.slice(0, 5).map(c => (
+            <TouchableOpacity
+              key={c.id}
+              style={createStyles.pickerItem}
+              onPress={() => selectCustomer(c)}
+            >
+              <Text style={createStyles.pickerItemName}>{c.name}</Text>
+              {c.email && <Text style={createStyles.pickerItemSub}>{c.email}</Text>}
+            </TouchableOpacity>
+          ))}
+        </View>
+      )}
+
+      <View style={createStyles.inputGroup}>
+        <Text style={createStyles.inputLabel}>Phone</Text>
+        <TextInput
+          style={createStyles.bigInput}
+          value={customerPhone}
+          onChangeText={setCustomerPhone}
+          placeholder="(555) 123-4567"
+          placeholderTextColor={Colors.textTertiary}
+          keyboardType="phone-pad"
+        />
+      </View>
+
+      <View style={createStyles.inputGroup}>
+        <Text style={createStyles.inputLabel}>Email</Text>
+        <TextInput
+          style={createStyles.bigInput}
+          value={customerEmail}
+          onChangeText={setCustomerEmail}
+          placeholder="email@example.com"
+          placeholderTextColor={Colors.textTertiary}
+          keyboardType="email-address"
+          autoCapitalize="none"
+        />
+      </View>
+    </View>
+  );
+
+  const renderStep1JobType = () => (
+    <View style={createStyles.stepBody}>
+      <Text style={createStyles.stepTitle}>What work needs done?</Text>
+      <Text style={createStyles.stepSubtitle}>Tap all that apply</Text>
+
+      <View style={createStyles.gridContainer}>
+        {JOB_TYPES.map(job =>
+          renderGridButton(
+            job.key,
+            job.label,
+            job.icon,
+            selectedJobs.includes(job.key),
+            () => toggleItem(selectedJobs, job.key, setSelectedJobs),
+          )
+        )}
+      </View>
+    </View>
+  );
+
+  const renderStep2TreeDetails = () => (
+    <View style={createStyles.stepBody}>
+      <Text style={createStyles.stepTitle}>Tree Details</Text>
+      <Text style={createStyles.stepSubtitle}>Species, height, and count</Text>
+
+      <Text style={createStyles.sectionHeading}>Species (tap all that apply)</Text>
+      <View style={createStyles.gridContainer}>
+        {TREE_TYPES.map(tree =>
+          renderGridButton(
+            tree.label,
+            tree.label,
+            tree.icon,
+            selectedTreeTypes.includes(tree.label),
+            () => toggleItem(selectedTreeTypes, tree.label, setSelectedTreeTypes),
+          )
+        )}
+      </View>
+
+      <Text style={[createStyles.sectionHeading, { marginTop: 24 }]}>Tree Height</Text>
+      {renderHeightSlider()}
+
+      <View style={{ marginTop: 20 }} />
+      {renderTreeCountPicker()}
+    </View>
+  );
+
+  const renderStep3Hazards = () => (
+    <View style={createStyles.stepBody}>
+      <Text style={createStyles.stepTitle}>Hazards & Cleanup</Text>
+      <Text style={createStyles.stepSubtitle}>Affects pricing — tap all that apply</Text>
+
+      <Text style={createStyles.sectionHeading}>Hazards</Text>
+      <View style={createStyles.gridContainer}>
+        {HAZARD_FACTORS.map(hazard =>
+          renderGridButton(
+            hazard.key,
+            hazard.label,
+            hazard.icon,
+            selectedHazards.includes(hazard.key),
+            () => toggleItem(selectedHazards, hazard.key, setSelectedHazards),
+          )
+        )}
+      </View>
+
+      <Text style={[createStyles.sectionHeading, { marginTop: 24 }]}>Cleanup</Text>
+      <View style={createStyles.gridContainer}>
+        {CLEANUP_OPTIONS.map(opt =>
+          renderGridButton(
+            opt.key,
+            opt.label,
+            opt.icon,
+            selectedCleanup.includes(opt.key),
+            () => setSelectedCleanup(selectedCleanup.includes(opt.key) ? [] : [opt.key]),
+          )
+        )}
+      </View>
+    </View>
+  );
+
+  const renderStep4Review = () => {
+    // Summary of selections
+    const jobLabels = selectedJobs.map(k => JOB_TYPES.find(j => j.key === k)?.label || k);
+    const treeLabels = selectedTreeTypes;
+    const hazardLabels = selectedHazards
+      .filter(h => h !== 'none')
+      .map(h => HAZARD_FACTORS.find(f => f.key === h)?.label || h);
+    const cleanupLabel = selectedCleanup.map(c => CLEANUP_OPTIONS.find(o => o.key === c)?.label || c).join(', ');
+
+    return (
+      <View style={createStyles.stepBody}>
+        <Text style={createStyles.stepTitle}>Review & Price</Text>
+
+        {/* Selection summary */}
+        <View style={createStyles.summaryCard}>
+          <Text style={createStyles.summaryHeading}>Job Summary</Text>
+          <View style={createStyles.summaryRow}>
+            <Text style={createStyles.summaryLabel}>Customer</Text>
+            <Text style={createStyles.summaryValue}>{customerName}</Text>
+          </View>
+          <View style={createStyles.summaryRow}>
+            <Text style={createStyles.summaryLabel}>Work</Text>
+            <Text style={createStyles.summaryValue}>{jobLabels.join(', ') || 'None'}</Text>
+          </View>
+          <View style={createStyles.summaryRow}>
+            <Text style={createStyles.summaryLabel}>Trees</Text>
+            <Text style={createStyles.summaryValue}>
+              {treeCount}x {treeLabels.join(', ') || 'Not specified'} — {getHeightLabel(treeHeight)}
+            </Text>
+          </View>
+          {hazardLabels.length > 0 && (
+            <View style={createStyles.summaryRow}>
+              <Text style={createStyles.summaryLabel}>Hazards</Text>
+              <Text style={[createStyles.summaryValue, { color: Colors.danger }]}>{hazardLabels.join(', ')}</Text>
+            </View>
+          )}
+          {cleanupLabel ? (
+            <View style={createStyles.summaryRow}>
+              <Text style={createStyles.summaryLabel}>Cleanup</Text>
+              <Text style={createStyles.summaryValue}>{cleanupLabel}</Text>
+            </View>
+          ) : null}
+        </View>
+
+        {/* AI pricing */}
+        {aiGenerating ? (
+          <View style={createStyles.aiLoadingBox}>
+            <ActivityIndicator size="large" color={Colors.ai} />
+            <Text style={createStyles.aiLoadingText}>AI is pricing this job...</Text>
+          </View>
+        ) : lineItems.length === 0 ? (
+          <TouchableOpacity style={createStyles.aiGenerateBtn} onPress={handleAIGenerate}>
+            <Text style={{ fontSize: 28 }}>🤖</Text>
+            <Text style={createStyles.aiGenerateBtnText}>Generate Pricing with AI</Text>
+          </TouchableOpacity>
+        ) : (
+          <>
+            {/* Line items */}
+            <Text style={[createStyles.sectionHeading, { marginTop: 16 }]}>Work Breakdown</Text>
+            {lineItems.map((item, i) => (
+              <View key={i} style={createStyles.reviewItemCard}>
+                <Text style={createStyles.reviewItemDesc}>{item.description}</Text>
+                {item.costJustification ? (
+                  <Text style={createStyles.reviewItemJustification}>💡 {item.costJustification}</Text>
+                ) : null}
+                <View style={createStyles.reviewItemBottom}>
+                  <Text style={createStyles.reviewItemQty}>{item.qty} x {formatCurrency(item.rate)}</Text>
+                  <Text style={createStyles.reviewItemAmount}>{formatCurrency(item.amount)}</Text>
+                </View>
+              </View>
+            ))}
+
+            {/* Totals */}
+            <View style={createStyles.totalsCard}>
+              <View style={createStyles.totalRow}>
+                <Text style={createStyles.totalLabel}>Subtotal</Text>
+                <Text style={createStyles.totalValue}>{formatCurrency(subtotal)}</Text>
+              </View>
+              <View style={createStyles.totalRow}>
+                <Text style={createStyles.totalLabel}>Tax ({taxRate}%)</Text>
+                <Text style={createStyles.totalValue}>{formatCurrency(taxAmount)}</Text>
+              </View>
+              <View style={[createStyles.totalRow, createStyles.grandTotalRow]}>
+                <Text style={createStyles.grandTotalLabel}>TOTAL</Text>
+                <Text style={createStyles.grandTotalValue}>{formatCurrency(total)}</Text>
+              </View>
+            </View>
+
+            {/* Re-generate */}
+            <TouchableOpacity style={createStyles.regenBtn} onPress={handleAIGenerate}>
+              <Text style={createStyles.regenBtnText}>🤖 Re-generate Pricing</Text>
+            </TouchableOpacity>
+
+            {/* Save buttons */}
+            <View style={createStyles.saveActions}>
+              <TouchableOpacity
+                style={createStyles.saveDraftBtn}
+                onPress={() => handleSave(false)}
+                disabled={submitting}
+              >
+                {submitting && !generatingPdf ? (
+                  <ActivityIndicator size="small" color={Colors.primary} />
+                ) : (
+                  <Text style={createStyles.saveDraftText}>Save Draft</Text>
+                )}
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={createStyles.savePdfBtn}
+                onPress={() => handleSave(true)}
+                disabled={submitting}
+              >
+                {generatingPdf ? (
+                  <ActivityIndicator size="small" color="#fff" />
+                ) : (
+                  <Text style={createStyles.savePdfText}>Save & Generate PDF</Text>
+                )}
+              </TouchableOpacity>
+            </View>
+          </>
+        )}
+      </View>
+    );
+  };
+
+  const stepContent = [renderStep0Customer, renderStep1JobType, renderStep2TreeDetails, renderStep3Hazards, renderStep4Review];
 
   return (
     <Modal visible={visible} animationType="slide" presentationStyle="pageSheet" onRequestClose={handleClose}>
       <KeyboardAvoidingView style={createStyles.container} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+        {/* Header with step indicator */}
         <View style={createStyles.header}>
-          <TouchableOpacity onPress={handleClose} style={{ minWidth: 60 }}>
-            <Text style={createStyles.cancelBtn}>Cancel</Text>
+          <TouchableOpacity onPress={handleClose} style={createStyles.headerCancelTouch}>
+            <Text style={createStyles.headerCancelText}>Cancel</Text>
           </TouchableOpacity>
-          <Text style={createStyles.headerTitle}>Manual Estimate</Text>
-          <View style={{ width: 60 }} />
+          <View style={createStyles.headerCenter}>
+            <Text style={createStyles.headerTitle}>New Estimate</Text>
+            <Text style={createStyles.headerStep}>Step {step + 1} of {WIZARD_STEPS.length}</Text>
+          </View>
+          <View style={{ width: 70 }} />
         </View>
 
-        <ScrollView style={createStyles.scroll} contentContainerStyle={createStyles.scrollContent} keyboardShouldPersistTaps="handled">
-          {/* Customer section */}
-          <Text style={createStyles.sectionLabel}>Customer</Text>
+        {/* Step progress bar */}
+        <View style={createStyles.progressBar}>
+          {WIZARD_STEPS.map((s, i) => (
+            <TouchableOpacity
+              key={i}
+              style={[
+                createStyles.progressSegment,
+                i <= step && createStyles.progressSegmentActive,
+                i === step && createStyles.progressSegmentCurrent,
+              ]}
+              onPress={() => { if (i < step) setStep(i); }}
+              activeOpacity={i < step ? 0.7 : 1}
+            >
+              <Text style={[
+                createStyles.progressLabel,
+                i <= step && createStyles.progressLabelActive,
+              ]}>{i + 1}</Text>
+            </TouchableOpacity>
+          ))}
+        </View>
 
-          <View style={createStyles.fieldRow}>
-            <Text style={createStyles.fieldLabel}>Name *</Text>
-            <TextInput
-              style={createStyles.fieldInput}
-              value={customerName}
-              onChangeText={v => {
-                setCustomerName(v);
-                setSelectedCustomerId(null);
-                if (v.trim().length > 0 && customers.length > 0) {
-                  setShowCustomerPicker(true);
-                } else {
-                  setShowCustomerPicker(false);
-                }
-              }}
-              placeholder="Customer name"
-              placeholderTextColor={Colors.textTertiary}
-            />
-          </View>
+        {/* Step name */}
+        <View style={createStyles.stepNameBar}>
+          <Text style={createStyles.stepNameText}>{WIZARD_STEPS[step]}</Text>
+        </View>
 
-          {showCustomerPicker && filteredCustomers.length > 0 && (
-            <View style={createStyles.pickerDropdown}>
-              {filteredCustomers.slice(0, 5).map(c => (
-                <TouchableOpacity
-                  key={c.id}
-                  style={createStyles.pickerItem}
-                  onPress={() => selectCustomer(c)}
-                >
-                  <Text style={createStyles.pickerItemName}>{c.name}</Text>
-                  {c.email && <Text style={createStyles.pickerItemSub}>{c.email}</Text>}
-                </TouchableOpacity>
-              ))}
-            </View>
-          )}
-
-          <View style={{ flexDirection: 'row', gap: 8 }}>
-            <View style={{ flex: 1 }}>
-              <Text style={createStyles.fieldLabel}>Email</Text>
-              <TextInput
-                style={createStyles.fieldInput}
-                value={customerEmail}
-                onChangeText={setCustomerEmail}
-                placeholder="email@example.com"
-                placeholderTextColor={Colors.textTertiary}
-                keyboardType="email-address"
-                autoCapitalize="none"
-              />
-            </View>
-            <View style={{ flex: 1 }}>
-              <Text style={createStyles.fieldLabel}>Phone</Text>
-              <TextInput
-                style={createStyles.fieldInput}
-                value={customerPhone}
-                onChangeText={setCustomerPhone}
-                placeholder="(555) 123-4567"
-                placeholderTextColor={Colors.textTertiary}
-                keyboardType="phone-pad"
-              />
-            </View>
-          </View>
-
-          {/* Job builder presets */}
-          {showPresets && (
-            <>
-              <Text style={[createStyles.sectionLabel, { marginTop: Theme.space.xl }]}>
-                What work needs done?
-              </Text>
-              <Text style={createStyles.sectionHint}>Tap all that apply — AI will generate pricing</Text>
-
-              <Text style={createStyles.presetGroupLabel}>Job Type *</Text>
-              <ChipSelector
-                items={JOB_TYPES}
-                selected={selectedJobs}
-                onToggle={k => toggleItem(selectedJobs, k, setSelectedJobs)}
-              />
-
-              <Text style={createStyles.presetGroupLabel}>Tree Species</Text>
-              <ChipSelector
-                items={TREE_TYPES}
-                selected={selectedTreeTypes}
-                onToggle={k => toggleItem(selectedTreeTypes, k, setSelectedTreeTypes)}
-              />
-
-              <Text style={createStyles.presetGroupLabel}>Tree Size</Text>
-              <ChipSelector
-                items={TREE_SIZES}
-                selected={selectedSize}
-                onToggle={k => {
-                  // Single select for size
-                  setSelectedSize(selectedSize.includes(k) ? [] : [k]);
-                }}
-              />
-
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, marginTop: 8, marginBottom: 4 }}>
-                <Text style={createStyles.presetGroupLabel}>Number of Trees</Text>
-                <TextInput
-                  style={[createStyles.fieldInput, { width: 70, textAlign: 'center', marginBottom: 0 }]}
-                  value={treeCount}
-                  onChangeText={setTreeCount}
-                  keyboardType="number-pad"
-                  placeholder="1"
-                  placeholderTextColor={Colors.textTertiary}
-                />
-              </View>
-
-              <Text style={createStyles.presetGroupLabel}>Hazards & Conditions</Text>
-              <ChipSelector
-                items={HAZARD_FACTORS}
-                selected={selectedHazards}
-                onToggle={k => toggleItem(selectedHazards, k, setSelectedHazards)}
-              />
-
-              <Text style={createStyles.presetGroupLabel}>Cleanup</Text>
-              <ChipSelector
-                items={CLEANUP_OPTIONS}
-                selected={selectedCleanup}
-                onToggle={k => setSelectedCleanup(selectedCleanup.includes(k) ? [] : [k])}
-              />
-
-              {/* AI Generate from presets */}
-              <TouchableOpacity
-                style={[createStyles.aiBtn, !hasPresetSelections && { opacity: 0.4 }]}
-                onPress={handleAIFromPresets}
-                disabled={!hasPresetSelections || aiGenerating}
-              >
-                {aiGenerating ? (
-                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
-                    <ActivityIndicator size="small" color="#fff" />
-                    <Text style={createStyles.aiBtnText}>AI is pricing this job...</Text>
-                  </View>
-                ) : (
-                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                    <Text style={{ fontSize: 18 }}>🤖</Text>
-                    <Text style={createStyles.aiBtnText}>Generate Pricing with AI</Text>
-                  </View>
-                )}
-              </TouchableOpacity>
-
-              {/* Skip to manual */}
-              <TouchableOpacity
-                style={createStyles.skipBtn}
-                onPress={() => setShowPresets(false)}
-              >
-                <Text style={createStyles.skipBtnText}>Skip — I'll enter items manually</Text>
-              </TouchableOpacity>
-            </>
-          )}
-
-          {/* Line items (shown after presets or when skipped) */}
-          {!showPresets && (
-            <>
-              <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: Theme.space.xl }}>
-                <Text style={createStyles.sectionLabel}>Line Items</Text>
-                <TouchableOpacity onPress={() => setShowPresets(true)}>
-                  <Text style={{ fontSize: 13, color: Colors.ai, fontWeight: '600' as any }}>🤖 Re-generate</Text>
-                </TouchableOpacity>
-              </View>
-
-              {lineItems.map((item, index) => (
-                <View key={index} style={createStyles.lineItemCard}>
-                  <View style={createStyles.lineItemHeader}>
-                    <Text style={createStyles.lineItemIndex}>Item {index + 1}</Text>
-                    {lineItems.length > 1 && (
-                      <TouchableOpacity onPress={() => removeLineItem(index)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-                        <Text style={createStyles.removeBtn}>Remove</Text>
-                      </TouchableOpacity>
-                    )}
-                  </View>
-                  <TextInput
-                    style={createStyles.fieldInput}
-                    value={item.description}
-                    onChangeText={v => updateLineItem(index, 'description', v)}
-                    placeholder="Description of work"
-                    placeholderTextColor={Colors.textTertiary}
-                    multiline
-                  />
-                  {item.costJustification ? (
-                    <View style={createStyles.justificationBox}>
-                      <Text style={createStyles.justificationText}>💡 {item.costJustification}</Text>
-                    </View>
-                  ) : null}
-                  <View style={createStyles.lineItemNumbers}>
-                    <View style={createStyles.numberField}>
-                      <Text style={createStyles.numberLabel}>Qty</Text>
-                      <TextInput
-                        style={createStyles.numberInput}
-                        value={item.qty > 0 ? String(item.qty) : ''}
-                        onChangeText={v => updateLineItem(index, 'qty', v)}
-                        placeholder="1"
-                        placeholderTextColor={Colors.textTertiary}
-                        keyboardType="decimal-pad"
-                      />
-                    </View>
-                    <View style={createStyles.numberField}>
-                      <Text style={createStyles.numberLabel}>Rate ($)</Text>
-                      <TextInput
-                        style={createStyles.numberInput}
-                        value={item.rate > 0 ? String(item.rate) : ''}
-                        onChangeText={v => updateLineItem(index, 'rate', v)}
-                        placeholder="0.00"
-                        placeholderTextColor={Colors.textTertiary}
-                        keyboardType="decimal-pad"
-                      />
-                    </View>
-                    <View style={createStyles.numberField}>
-                      <Text style={createStyles.numberLabel}>Amount</Text>
-                      <Text style={createStyles.amountText}>{formatCurrency(item.amount)}</Text>
-                    </View>
-                  </View>
-                </View>
-              ))}
-
-              <TouchableOpacity style={createStyles.addItemBtn} onPress={addLineItem}>
-                <Text style={createStyles.addItemText}>+ Add Line Item</Text>
-              </TouchableOpacity>
-
-              {/* Notes & tax */}
-              <Text style={[createStyles.sectionLabel, { marginTop: Theme.space.xl }]}>Details</Text>
-
-              <View style={{ flexDirection: 'row', gap: 8 }}>
-                <View style={{ flex: 1 }}>
-                  <Text style={createStyles.fieldLabel}>Tax Rate (%)</Text>
-                  <TextInput
-                    style={createStyles.fieldInput}
-                    value={taxRate}
-                    onChangeText={setTaxRate}
-                    placeholder="0"
-                    placeholderTextColor={Colors.textTertiary}
-                    keyboardType="decimal-pad"
-                  />
-                </View>
-                <View style={{ flex: 2 }} />
-              </View>
-
-              <View style={createStyles.fieldRow}>
-                <Text style={createStyles.fieldLabel}>Notes</Text>
-                <TextInput
-                  style={[createStyles.fieldInput, createStyles.textArea]}
-                  value={notes}
-                  onChangeText={setNotes}
-                  placeholder="Additional notes, access instructions, scheduling..."
-                  placeholderTextColor={Colors.textTertiary}
-                  multiline
-                  numberOfLines={4}
-                />
-              </View>
-
-              {/* Totals */}
-              <View style={createStyles.totalsCard}>
-                <View style={createStyles.totalRow}>
-                  <Text style={createStyles.totalLabel}>Subtotal</Text>
-                  <Text style={createStyles.totalValue}>{formatCurrency(subtotal)}</Text>
-                </View>
-                <View style={createStyles.totalRow}>
-                  <Text style={createStyles.totalLabel}>Tax ({taxRateNum}%)</Text>
-                  <Text style={createStyles.totalValue}>{formatCurrency(taxAmount)}</Text>
-                </View>
-                <View style={[createStyles.totalRow, createStyles.grandTotal]}>
-                  <Text style={createStyles.grandTotalLabel}>Total</Text>
-                  <Text style={createStyles.grandTotalValue}>{formatCurrency(total)}</Text>
-                </View>
-              </View>
-
-              {/* Action buttons */}
-              <View style={createStyles.actionButtons}>
-                <TouchableOpacity
-                  style={[createStyles.saveBtn, createStyles.saveDraftBtn]}
-                  onPress={() => handleSave(false)}
-                  disabled={submitting}
-                >
-                  {submitting && !generatingPdf ? (
-                    <ActivityIndicator size="small" color={Colors.primary} />
-                  ) : (
-                    <Text style={createStyles.saveDraftText}>Save Draft</Text>
-                  )}
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={[createStyles.saveBtn, createStyles.savePdfBtn]}
-                  onPress={() => handleSave(true)}
-                  disabled={submitting}
-                >
-                  {generatingPdf ? (
-                    <ActivityIndicator size="small" color="#fff" />
-                  ) : (
-                    <Text style={createStyles.savePdfText}>Save & Generate PDF</Text>
-                  )}
-                </TouchableOpacity>
-              </View>
-            </>
-          )}
+        {/* Content */}
+        <ScrollView
+          style={createStyles.scroll}
+          contentContainerStyle={createStyles.scrollContent}
+          keyboardShouldPersistTaps="handled"
+        >
+          {stepContent[step]()}
         </ScrollView>
+
+        {/* Bottom nav buttons */}
+        {step < 4 && (
+          <View style={createStyles.bottomNav}>
+            {step > 0 ? (
+              <TouchableOpacity style={createStyles.backBtn} onPress={goBack} activeOpacity={0.7}>
+                <Text style={createStyles.backBtnText}>Back</Text>
+              </TouchableOpacity>
+            ) : (
+              <View style={{ flex: 1 }} />
+            )}
+            <TouchableOpacity
+              style={[createStyles.nextBtn, !canGoNext() && { opacity: 0.35 }]}
+              onPress={goNext}
+              disabled={!canGoNext()}
+              activeOpacity={0.7}
+            >
+              <Text style={createStyles.nextBtnText}>
+                {step === 3 ? 'Review & Price' : 'Next'}
+              </Text>
+              <Text style={createStyles.nextBtnArrow}>→</Text>
+            </TouchableOpacity>
+          </View>
+        )}
       </KeyboardAvoidingView>
     </Modal>
   );
@@ -2536,221 +2613,510 @@ const voiceStyles = StyleSheet.create({
   redoBtnText: { fontSize: Theme.font.size.body, fontWeight: Theme.font.weight.semibold, color: Colors.text },
 });
 
-// ─── Create Modal Styles ─────────────────────────────────────────────────────
+// ─── POS Create Modal Styles ─────────────────────────────────────────────────
+
+const GRID_GAP = 10;
+const GRID_COLS = 2;
+const GRID_ITEM_WIDTH = (SCREEN_WIDTH - 32 - GRID_GAP) / GRID_COLS; // 16px padding each side
 
 const createStyles = StyleSheet.create({
   container: { flex: 1, backgroundColor: Colors.background },
   header: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'center',
-    padding: Theme.layout.screenPadding,
-    paddingTop: Theme.space.xl,
+    justifyContent: 'space-between',
+    paddingHorizontal: 16,
+    paddingTop: Platform.OS === 'ios' ? 54 : 16,
+    paddingBottom: 10,
+    backgroundColor: Colors.primary,
+  },
+  headerCancelTouch: { width: 70 },
+  headerCancelText: { fontSize: 16, fontWeight: '600' as any, color: '#fff' },
+  headerCenter: { alignItems: 'center' },
+  headerTitle: { fontSize: 18, fontWeight: '800' as any, color: '#fff' },
+  headerStep: { fontSize: 13, fontWeight: '500' as any, color: 'rgba(255,255,255,0.75)', marginTop: 1 },
+
+  // Progress bar
+  progressBar: {
+    flexDirection: 'row',
+    gap: 4,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    backgroundColor: Colors.primaryDark,
+  },
+  progressSegment: {
+    flex: 1,
+    height: 36,
+    borderRadius: 8,
+    backgroundColor: 'rgba(255,255,255,0.15)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  progressSegmentActive: {
+    backgroundColor: 'rgba(255,255,255,0.35)',
+  },
+  progressSegmentCurrent: {
+    backgroundColor: '#fff',
+  },
+  progressLabel: {
+    fontSize: 15,
+    fontWeight: '800' as any,
+    color: 'rgba(255,255,255,0.5)',
+  },
+  progressLabelActive: {
+    color: Colors.primaryDark,
+  },
+
+  // Step name bar
+  stepNameBar: {
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    backgroundColor: Colors.surface,
     borderBottomWidth: 1,
     borderBottomColor: Colors.border,
-    backgroundColor: Colors.surface,
   },
-  headerTitle: { fontSize: Theme.font.size.subtitle, fontWeight: Theme.font.weight.semibold, color: Colors.text },
-  cancelBtn: { fontSize: Theme.font.size.body, color: Colors.textSecondary },
-  scroll: { flex: 1 },
-  scrollContent: { padding: Theme.layout.screenPadding, paddingBottom: 60 },
-  sectionLabel: {
-    fontSize: Theme.font.size.small,
-    fontWeight: Theme.font.weight.bold,
-    color: Colors.primary,
+  stepNameText: {
+    fontSize: 14,
+    fontWeight: '700' as any,
+    color: Colors.textSecondary,
     textTransform: 'uppercase',
-    letterSpacing: 0.8,
-    marginBottom: Theme.space.sm,
+    letterSpacing: 1,
   },
-  sectionHint: {
-    fontSize: 13,
-    color: Colors.textSecondary,
-    marginBottom: 12,
-    marginTop: -4,
-  },
-  presetGroupLabel: {
-    fontSize: 13,
-    fontWeight: Theme.font.weight.semibold,
+
+  // Scroll
+  scroll: { flex: 1 },
+  scrollContent: { padding: 16, paddingBottom: 30 },
+
+  // Step body
+  stepBody: { gap: 0 },
+  stepTitle: {
+    fontSize: 26,
+    fontWeight: '800' as any,
     color: Colors.text,
-    marginTop: 16,
-    marginBottom: 8,
+    marginBottom: 4,
   },
-  fieldRow: { marginBottom: Theme.space.md },
-  fieldLabel: {
-    fontSize: Theme.font.size.small,
-    fontWeight: Theme.font.weight.medium,
+  stepSubtitle: {
+    fontSize: 16,
     color: Colors.textSecondary,
-    marginBottom: Theme.space.xs,
+    marginBottom: 20,
   },
-  fieldInput: {
+  sectionHeading: {
+    fontSize: 16,
+    fontWeight: '700' as any,
+    color: Colors.text,
+    marginBottom: 10,
+  },
+
+  // Big grid buttons (McDonald's kiosk style)
+  gridContainer: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: GRID_GAP,
+  },
+  gridBtn: {
+    width: GRID_ITEM_WIDTH,
+    minHeight: 80,
+    borderRadius: 14,
     backgroundColor: Colors.surface,
-    borderWidth: 1,
+    borderWidth: 2.5,
     borderColor: Colors.border,
-    borderRadius: Theme.radius.md,
-    padding: Theme.space.md,
-    fontSize: Theme.font.size.body,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 12,
+    paddingHorizontal: 8,
+  },
+  gridBtnSelected: {
+    borderColor: Colors.primary,
+    backgroundColor: Colors.primary + '12',
+    borderWidth: 3,
+  },
+  gridBtnIcon: {
+    fontSize: 32,
+    marginBottom: 4,
+  },
+  gridBtnLabel: {
+    fontSize: 15,
+    fontWeight: '700' as any,
+    color: Colors.text,
+    textAlign: 'center',
+    lineHeight: 18,
+  },
+  gridBtnLabelSelected: {
+    color: Colors.primaryDark,
+  },
+
+  // Height slider
+  sliderContainer: {
+    gap: 12,
+  },
+  sliderValueBox: {
+    alignItems: 'center',
+    backgroundColor: Colors.primary + '10',
+    borderRadius: 14,
+    paddingVertical: 14,
+    borderWidth: 2,
+    borderColor: Colors.primary + '30',
+  },
+  sliderValueText: {
+    fontSize: 36,
+    fontWeight: '800' as any,
+    color: Colors.primary,
+  },
+  sliderSizeLabel: {
+    fontSize: 16,
+    fontWeight: '600' as any,
+    color: Colors.primaryDark,
+    marginTop: 2,
+  },
+  sliderTrack: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 6,
+    justifyContent: 'center',
+  },
+  sliderStop: {
+    width: 56,
+    height: 48,
+    borderRadius: 10,
+    backgroundColor: Colors.surface,
+    borderWidth: 2,
+    borderColor: Colors.border,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  sliderStopActive: {
+    backgroundColor: Colors.primary + '18',
+    borderColor: Colors.primary + '50',
+  },
+  sliderStopSelected: {
+    backgroundColor: Colors.primary,
+    borderColor: Colors.primary,
+  },
+  sliderStopText: {
+    fontSize: 15,
+    fontWeight: '700' as any,
+    color: Colors.textSecondary,
+  },
+  sliderStopTextActive: {
+    color: '#fff',
+  },
+
+  // Tree count picker
+  counterRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: Colors.surface,
+    borderRadius: 14,
+    padding: 16,
+    borderWidth: 2,
+    borderColor: Colors.border,
+  },
+  counterLabel: {
+    fontSize: 18,
+    fontWeight: '700' as any,
     color: Colors.text,
   },
-  textArea: { minHeight: 80, textAlignVertical: 'top' },
+  counterControls: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 0,
+  },
+  counterBtn: {
+    width: 60,
+    height: 60,
+    borderRadius: 14,
+    backgroundColor: Colors.primary,
+    alignItems: 'center',
+    justifyContent: 'center',
+    ...Theme.shadow.sm,
+  },
+  counterBtnText: {
+    fontSize: 32,
+    fontWeight: '800' as any,
+    color: '#fff',
+    lineHeight: 36,
+  },
+  counterDisplay: {
+    width: 70,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  counterValue: {
+    fontSize: 36,
+    fontWeight: '800' as any,
+    color: Colors.text,
+  },
+
+  // Customer inputs
+  inputGroup: {
+    marginBottom: 14,
+  },
+  inputLabel: {
+    fontSize: 15,
+    fontWeight: '700' as any,
+    color: Colors.textSecondary,
+    marginBottom: 6,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+  bigInput: {
+    backgroundColor: Colors.surface,
+    borderWidth: 2,
+    borderColor: Colors.border,
+    borderRadius: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 16,
+    fontSize: 18,
+    fontWeight: '500' as any,
+    color: Colors.text,
+  },
+
+  // Customer picker dropdown
   pickerDropdown: {
     backgroundColor: Colors.surface,
-    borderWidth: 1,
-    borderColor: Colors.border,
-    borderRadius: Theme.radius.md,
-    marginBottom: Theme.space.md,
-    marginTop: -Theme.space.sm,
+    borderWidth: 2,
+    borderColor: Colors.primary + '40',
+    borderRadius: 12,
+    marginBottom: 14,
+    marginTop: -8,
     overflow: 'hidden',
   },
   pickerItem: {
-    paddingHorizontal: Theme.space.md,
-    paddingVertical: Theme.space.sm,
+    paddingHorizontal: 16,
+    paddingVertical: 14,
     borderBottomWidth: 1,
     borderBottomColor: Colors.border,
   },
-  pickerItemName: { fontSize: Theme.font.size.body, color: Colors.text, fontWeight: Theme.font.weight.medium },
-  pickerItemSub: { fontSize: Theme.font.size.small, color: Colors.textSecondary, marginTop: 1 },
-  // AI button
-  aiBtn: {
-    backgroundColor: Colors.ai,
-    paddingVertical: 18,
-    borderRadius: Theme.radius.lg,
-    alignItems: 'center',
-    marginTop: 24,
-    ...Theme.shadow.sm,
-  },
-  aiBtnText: { fontSize: 16, fontWeight: Theme.font.weight.bold, color: '#fff' },
-  skipBtn: {
-    paddingVertical: 14,
-    alignItems: 'center',
-    marginTop: 10,
-  },
-  skipBtnText: { fontSize: 14, color: Colors.textSecondary, fontWeight: Theme.font.weight.medium },
-  // Line items
-  lineItemCard: {
+  pickerItemName: { fontSize: 17, color: Colors.text, fontWeight: '600' as any },
+  pickerItemSub: { fontSize: 14, color: Colors.textSecondary, marginTop: 2 },
+
+  // Review step
+  summaryCard: {
     backgroundColor: Colors.surface,
+    borderRadius: 14,
+    padding: 16,
+    gap: 8,
+    borderWidth: 2,
+    borderColor: Colors.border,
+    marginBottom: 16,
+  },
+  summaryHeading: {
+    fontSize: 18,
+    fontWeight: '800' as any,
+    color: Colors.text,
+    marginBottom: 4,
+  },
+  summaryRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    paddingVertical: 4,
+  },
+  summaryLabel: {
+    fontSize: 14,
+    fontWeight: '600' as any,
+    color: Colors.textTertiary,
+    width: 80,
+  },
+  summaryValue: {
+    fontSize: 15,
+    fontWeight: '600' as any,
+    color: Colors.text,
+    flex: 1,
+    textAlign: 'right',
+  },
+
+  // AI loading
+  aiLoadingBox: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 48,
+    gap: 16,
+  },
+  aiLoadingText: {
+    fontSize: 18,
+    fontWeight: '700' as any,
+    color: Colors.ai,
+  },
+
+  // AI generate button
+  aiGenerateBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 12,
+    backgroundColor: Colors.ai,
+    paddingVertical: 22,
+    borderRadius: 14,
+    ...Theme.shadow.md,
+  },
+  aiGenerateBtnText: {
+    fontSize: 20,
+    fontWeight: '800' as any,
+    color: '#fff',
+  },
+
+  // Review line items
+  reviewItemCard: {
+    backgroundColor: Colors.surface,
+    borderRadius: 12,
+    padding: 14,
+    marginBottom: 8,
     borderWidth: 1,
     borderColor: Colors.border,
-    borderRadius: Theme.radius.lg,
-    padding: Theme.space.md,
-    gap: Theme.space.sm,
-    marginBottom: Theme.space.sm,
   },
-  lineItemHeader: {
+  reviewItemDesc: {
+    fontSize: 15,
+    fontWeight: '600' as any,
+    color: Colors.text,
+    lineHeight: 20,
+    marginBottom: 4,
+  },
+  reviewItemJustification: {
+    fontSize: 13,
+    color: Colors.ai,
+    fontStyle: 'italic',
+    marginBottom: 6,
+    lineHeight: 17,
+  },
+  reviewItemBottom: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
+    marginTop: 4,
   },
-  lineItemIndex: {
-    fontSize: Theme.font.size.small,
-    fontWeight: Theme.font.weight.semibold,
-    color: Colors.textTertiary,
-    textTransform: 'uppercase',
+  reviewItemQty: {
+    fontSize: 14,
+    color: Colors.textSecondary,
   },
-  removeBtn: {
-    fontSize: Theme.font.size.small,
-    color: Colors.danger,
-    fontWeight: Theme.font.weight.medium,
-  },
-  justificationBox: {
-    backgroundColor: Colors.ai + '08',
-    borderRadius: Theme.radius.sm,
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderLeftWidth: 3,
-    borderLeftColor: Colors.ai,
-  },
-  justificationText: { fontSize: 12, color: Colors.ai, lineHeight: 16, fontStyle: 'italic' },
-  lineItemNumbers: {
-    flexDirection: 'row',
-    gap: Theme.space.sm,
-  },
-  numberField: { flex: 1 },
-  numberLabel: {
-    fontSize: Theme.font.size.caption,
-    color: Colors.textTertiary,
-    marginBottom: Theme.space.xxs,
-  },
-  numberInput: {
-    backgroundColor: Colors.background,
-    borderWidth: 1,
-    borderColor: Colors.border,
-    borderRadius: Theme.radius.sm,
-    padding: Theme.space.sm,
-    fontSize: Theme.font.size.body,
-    color: Colors.text,
-    textAlign: 'center',
-  },
-  amountText: {
-    fontSize: Theme.font.size.body,
-    fontWeight: Theme.font.weight.semibold,
+  reviewItemAmount: {
+    fontSize: 17,
+    fontWeight: '800' as any,
     color: Colors.primary,
-    textAlign: 'center',
-    paddingVertical: Theme.space.sm,
   },
-  addItemBtn: {
-    paddingVertical: Theme.space.md,
-    borderRadius: Theme.radius.md,
-    borderWidth: 1,
-    borderColor: Colors.primary + '40',
-    borderStyle: 'dashed',
-    alignItems: 'center',
-    marginBottom: Theme.space.sm,
-  },
-  addItemText: {
-    fontSize: Theme.font.size.body,
-    color: Colors.primary,
-    fontWeight: Theme.font.weight.medium,
-  },
+
+  // Totals
   totalsCard: {
     backgroundColor: Colors.surface,
-    borderRadius: Theme.radius.lg,
-    padding: Theme.space.lg,
-    marginTop: Theme.space.lg,
-    gap: Theme.space.xs,
+    borderRadius: 14,
+    padding: 18,
+    marginTop: 12,
+    gap: 4,
+    borderWidth: 2,
+    borderColor: Colors.primary + '25',
     ...Theme.shadow.sm,
   },
   totalRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    paddingVertical: 4,
+    paddingVertical: 5,
   },
-  totalLabel: { fontSize: Theme.font.size.body, color: Colors.textSecondary },
-  totalValue: { fontSize: Theme.font.size.body, color: Colors.text },
-  grandTotal: {
-    borderTopWidth: 1,
-    borderTopColor: Colors.border,
-    paddingTop: Theme.space.sm,
-    marginTop: Theme.space.xs,
+  totalLabel: { fontSize: 16, color: Colors.textSecondary },
+  totalValue: { fontSize: 16, fontWeight: '600' as any, color: Colors.text },
+  grandTotalRow: {
+    borderTopWidth: 2,
+    borderTopColor: Colors.primary + '30',
+    paddingTop: 10,
+    marginTop: 6,
   },
-  grandTotalLabel: { fontSize: 20, fontWeight: Theme.font.weight.bold, color: Colors.primary },
-  grandTotalValue: { fontSize: 20, fontWeight: Theme.font.weight.bold, color: Colors.primary },
-  actionButtons: {
-    gap: Theme.space.sm,
-    marginTop: Theme.space.xl,
-  },
-  saveBtn: {
-    paddingVertical: 16,
-    borderRadius: Theme.radius.lg,
+  grandTotalLabel: { fontSize: 24, fontWeight: '800' as any, color: Colors.primary },
+  grandTotalValue: { fontSize: 24, fontWeight: '800' as any, color: Colors.primary },
+
+  // Regen button
+  regenBtn: {
     alignItems: 'center',
-    justifyContent: 'center',
+    paddingVertical: 14,
+    marginTop: 10,
+    borderRadius: 12,
+    backgroundColor: Colors.ai + '10',
+    borderWidth: 1.5,
+    borderColor: Colors.ai + '30',
+  },
+  regenBtnText: {
+    fontSize: 15,
+    fontWeight: '700' as any,
+    color: Colors.ai,
+  },
+
+  // Save actions
+  saveActions: {
+    gap: 10,
+    marginTop: 20,
   },
   saveDraftBtn: {
+    paddingVertical: 18,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
     backgroundColor: Colors.surface,
-    borderWidth: 1,
+    borderWidth: 2,
     borderColor: Colors.border,
   },
   saveDraftText: {
-    fontSize: Theme.font.size.body,
-    fontWeight: Theme.font.weight.semibold,
+    fontSize: 18,
+    fontWeight: '700' as any,
     color: Colors.text,
   },
   savePdfBtn: {
+    paddingVertical: 20,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
     backgroundColor: Colors.primary,
-    ...Theme.shadow.sm,
+    ...Theme.shadow.md,
   },
   savePdfText: {
-    fontSize: Theme.font.size.body,
-    fontWeight: Theme.font.weight.semibold,
+    fontSize: 18,
+    fontWeight: '800' as any,
+    color: '#fff',
+  },
+
+  // Bottom nav
+  bottomNav: {
+    flexDirection: 'row',
+    gap: 10,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    paddingBottom: Platform.OS === 'ios' ? 30 : 16,
+    backgroundColor: Colors.surface,
+    borderTopWidth: 2,
+    borderTopColor: Colors.border,
+  },
+  backBtn: {
+    flex: 1,
+    height: 64,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: Colors.surfaceSecondary,
+    borderWidth: 2,
+    borderColor: Colors.border,
+  },
+  backBtnText: {
+    fontSize: 20,
+    fontWeight: '700' as any,
+    color: Colors.textSecondary,
+  },
+  nextBtn: {
+    flex: 2,
+    height: 64,
+    borderRadius: 14,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    backgroundColor: Colors.primary,
+    ...Theme.shadow.md,
+  },
+  nextBtnText: {
+    fontSize: 22,
+    fontWeight: '800' as any,
+    color: '#fff',
+  },
+  nextBtnArrow: {
+    fontSize: 24,
+    fontWeight: '700' as any,
     color: '#fff',
   },
 });
