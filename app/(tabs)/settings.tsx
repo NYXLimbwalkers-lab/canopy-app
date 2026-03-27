@@ -166,7 +166,7 @@ export default function SettingsScreen() {
 
   const oauthRedirectUri = (() => {
     try {
-      return Linking.createURL?.('oauth-callback') ?? `${typeof window !== 'undefined' ? window.location.origin : ''}/oauth-callback`;
+      return (Linking as any).createURL?.('oauth-callback') ?? `${typeof window !== 'undefined' ? window.location.origin : ''}/oauth-callback`;
     } catch {
       return `${typeof window !== 'undefined' ? window.location.origin : ''}/oauth-callback`;
     }

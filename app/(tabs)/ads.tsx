@@ -24,7 +24,7 @@ import { useAuthStore } from '@/lib/stores/authStore';
 import { supabase } from '@/lib/supabase';
 import { crossAlert } from '@/lib/crossAlert';
 
-type AdPlatform = 'google' | 'facebook' | 'other';
+type AdPlatform = 'google' | 'facebook' | 'google_ads' | 'facebook_ads' | 'other';
 type CampaignStatus = 'active' | 'paused' | 'ended' | 'draft';
 
 interface Campaign {
@@ -47,13 +47,17 @@ interface AdConnection {
 
 const PLATFORM_ICONS: Record<AdPlatform, string> = {
   google: '🔵',
+  google_ads: '🔵',
   facebook: '📘',
+  facebook_ads: '📘',
   other: '📣',
 };
 
 const PLATFORM_NAMES: Record<AdPlatform, string> = {
   google: 'Google Ads',
+  google_ads: 'Google Ads',
   facebook: 'Facebook Ads',
+  facebook_ads: 'Facebook Ads',
   other: 'Other',
 };
 

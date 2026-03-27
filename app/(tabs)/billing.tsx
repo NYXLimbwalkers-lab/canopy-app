@@ -13,7 +13,7 @@ export default function BillingScreen() {
   const { company, profile } = useAuthStore();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const currentPlan = company?.plan ?? 'trial';
+  const currentPlan = (company?.plan ?? 'trial') as string;
   const isActive = ['pro', 'active', 'trialing'].includes(currentPlan);
   const trialDays = trialDaysRemaining(company?.trial_ends_at);
   const isTrialing = currentPlan === 'trial' || currentPlan === 'trialing';

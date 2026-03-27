@@ -11,7 +11,7 @@ export default function DoneStep() {
 
   const handleGoToDashboard = async () => {
     await updateCompany({ onboarding_completed_at: new Date().toISOString() });
-    router.replace('/(tabs)/');
+    router.replace('/(tabs)/' as any);
   };
 
   return (
