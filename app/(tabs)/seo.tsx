@@ -386,9 +386,6 @@ Also suggest 3 relevant keywords to include. Keep the whole response under 150 w
       const result = await aiChat([{
         role: 'user',
         content: `Write a professional, warm response to this ${review.rating}-star Google review for ${company.name} (tree service company).
-          messages: [{
-            role: 'user',
-            content: `Write a professional, warm response to this ${review.rating}-star Google review for ${company.name} (tree service company).
 
 Review from ${review.reviewer_name}: "${review.body ?? '(No text provided)'}"
 
