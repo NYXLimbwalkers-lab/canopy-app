@@ -22,6 +22,31 @@ if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental
   UIManager.setLayoutAnimationEnabledExperimental(true);
 }
 
+// ─── Error Boundary for action data cards ──────────────────────────────────
+
+class ActionCardErrorBoundary extends React.Component<
+  { children: React.ReactNode },
+  { hasError: boolean }
+> {
+  constructor(props: { children: React.ReactNode }) {
+    super(props);
+    this.state = { hasError: false };
+  }
+  static getDerivedStateFromError() {
+    return { hasError: true };
+  }
+  render() {
+    if (this.state.hasError) {
+      return (
+        <View style={{ padding: 12, backgroundColor: '#FEF3C7', borderRadius: 8, marginHorizontal: 16, marginTop: 4 }}>
+          <Text style={{ color: '#92400E', fontSize: 13 }}>⚠️ Could not display this result card. The data may be in an unexpected format.</Text>
+        </View>
+      );
+    }
+    return this.props.children;
+  }
+}
+
 // ─── Types ──────────────────────────────────────────────────────────────────
 
 interface Message {
@@ -1298,21 +1323,26 @@ export default function AIExpertScreen() {
   const renderActionData = (msg: Message) => {
     if (!msg.actionType || !msg.actionData) return null;
 
-    switch (msg.actionType) {
-      case 'ad_copy':
-        return <AdCopyCard data={msg.actionData} />;
-      case 'video_script':
-        return <VideoScriptCard data={msg.actionData} />;
-      case 'lead_scores':
-        return <LeadScoresCard data={msg.actionData} />;
-      case 'review_response':
-        return <ReviewResponseCard data={msg.actionData} />;
-      case 'content_calendar':
-        return <ContentCalendarCard data={msg.actionData} />;
-      case 'market_strategy':
-        return <MarketStrategyCard data={msg.actionData} />;
-      default:
-        return null;
+    try {
+      switch (msg.actionType) {
+        case 'ad_copy':
+          return <AdCopyCard data={msg.actionData} />;
+        case 'video_script':
+          return <VideoScriptCard data={msg.actionData} />;
+        case 'lead_scores':
+          return <LeadScoresCard data={msg.actionData} />;
+        case 'review_response':
+          return <ReviewResponseCard data={msg.actionData} />;
+        case 'content_calendar':
+          return <ContentCalendarCard data={msg.actionData} />;
+        case 'market_strategy':
+          return <MarketStrategyCard data={msg.actionData} />;
+        default:
+          return null;
+      }
+    } catch {
+      // If action data can't be rendered (e.g., malformed stored data), skip it
+      return null;
     }
   };
 
@@ -1540,21 +1570,26 @@ export default function AIExpertScreen() {
                       </View>
 
                       {/* Inline Action Data Cards */}
-                      {renderActionData(msg)}
+                      <ActionCardErrorBoundary>
+                        {renderActionData(msg)}
+                      </ActionCardErrorBoundary>
 
                       {/* Smart Suggestions */}
-                      {msg.suggestions && msg.suggestions.length > 0 && (
+                      {msg.suggestions && Array.isArray(msg.suggestions) && msg.suggestions.length > 0 && (
                         <View style={styles.suggestionsRow}>
-                          {msg.suggestions.map((suggestion, si) => (
-                            <TouchableOpacity
-                              key={si}
-                              style={styles.suggestionChip}
-                              onPress={() => send(suggestion)}
-                              activeOpacity={0.7}
-                            >
-                              <Text style={styles.suggestionText}>{suggestion}</Text>
-                            </TouchableOpacity>
-                          ))}
+                          {msg.suggestions.map((suggestion, si) => {
+                            const text = typeof suggestion === 'string' ? suggestion : JSON.stringify(suggestion);
+                            return (
+                              <TouchableOpacity
+                                key={si}
+                                style={styles.suggestionChip}
+                                onPress={() => send(text)}
+                                activeOpacity={0.7}
+                              >
+                                <Text style={styles.suggestionText}>{text}</Text>
+                              </TouchableOpacity>
+                            );
+                          })}
                         </View>
                       )}
                     </TouchableOpacity>
