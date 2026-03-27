@@ -57,7 +57,7 @@ export default function RootLayout() {
       // Only jump to welcome if not already somewhere inside onboarding
       if (!inOnboarding) router.replace('/(onboarding)/welcome');
     } else if (session) {
-      if (inAuth || inOnboarding) router.replace('/(tabs)/');
+      if (inAuth || inOnboarding) router.replace('/(tabs)/' as any);
     }
   }, [isInitialized, session, company]);
 

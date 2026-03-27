@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useState, useCallback, useRef } from 'react';
 import {
   View,
   Text,
@@ -13,6 +13,8 @@ import {
   ActivityIndicator,
   Alert,
   Share,
+  Linking,
+  Animated,
 } from 'react-native';
 import { Colors } from '@/constants/Colors';
 import { Theme } from '@/constants/Theme';
@@ -103,6 +105,70 @@ const badgeStyles = StyleSheet.create({
   },
 });
 
+// ─── Voice Recording Hook (Web Speech API) ──────────────────────────────────
+
+function useVoiceInput() {
+  const [isListening, setIsListening] = useState(false);
+  const [transcript, setTranscript] = useState('');
+  const recognitionRef = useRef<any>(null);
+
+  const startListening = useCallback(() => {
+    if (Platform.OS !== 'web') {
+      Alert.alert('Voice Input', 'Voice input is available on the web version.');
+      return;
+    }
+
+    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    if (!SpeechRecognition) {
+      Alert.alert('Not Supported', 'Speech recognition is not supported in this browser. Try Chrome.');
+      return;
+    }
+
+    const recognition = new SpeechRecognition();
+    recognition.continuous = true;
+    recognition.interimResults = true;
+    recognition.lang = 'en-US';
+
+    let finalTranscript = '';
+
+    recognition.onresult = (event: any) => {
+      let interim = '';
+      for (let i = event.resultIndex; i < event.results.length; i++) {
+        if (event.results[i].isFinal) {
+          finalTranscript += event.results[i][0].transcript + ' ';
+        } else {
+          interim += event.results[i][0].transcript;
+        }
+      }
+      setTranscript(finalTranscript + interim);
+    };
+
+    recognition.onerror = (event: any) => {
+      console.error('Speech recognition error:', event.error);
+      setIsListening(false);
+    };
+
+    recognition.onend = () => {
+      setIsListening(false);
+    };
+
+    recognitionRef.current = recognition;
+    recognition.start();
+    setIsListening(true);
+    setTranscript('');
+  }, []);
+
+  const stopListening = useCallback(() => {
+    if (recognitionRef.current) {
+      recognitionRef.current.stop();
+      recognitionRef.current = null;
+    }
+    setIsListening(false);
+  }, []);
+
+  return { isListening, transcript, startListening, stopListening, setTranscript };
+}
+
 // ─── Estimate Card ───────────────────────────────────────────────────────────
 
 function EstimateCard({ estimate, onPress }: { estimate: Estimate; onPress: (e: Estimate) => void }) {
@@ -122,9 +188,160 @@ function EstimateCard({ estimate, onPress }: { estimate: Estimate; onPress: (e: 
         <Text style={styles.cardDate}>{formatDate(estimate.created_at)}</Text>
         <Text style={styles.cardTotal}>{formatCurrency(estimate.total || 0)}</Text>
       </View>
+      {(estimate.pdf_url || estimate.contract_url) && (
+        <View style={styles.cardDocs}>
+          {estimate.pdf_url && <Text style={styles.cardDocBadge}>Estimate</Text>}
+          {estimate.contract_url && <Text style={[styles.cardDocBadge, { backgroundColor: Colors.ai + '20', color: Colors.ai }]}>Contract</Text>}
+        </View>
+      )}
     </TouchableOpacity>
   );
 }
+
+// ─── Preview Modal ──────────────────────────────────────────────────────────
+
+function PreviewModal({
+  visible,
+  onClose,
+  url,
+  title,
+  onSend,
+  customerEmail,
+  customerPhone,
+}: {
+  visible: boolean;
+  onClose: () => void;
+  url: string | null;
+  title: string;
+  onSend?: () => void;
+  customerEmail?: string | null;
+  customerPhone?: string | null;
+}) {
+  if (!url) return null;
+
+  const handleEmail = () => {
+    const subject = encodeURIComponent(title);
+    const body = encodeURIComponent(`Hi,\n\nPlease find your ${title.toLowerCase()} here:\n${url}\n\nThank you!`);
+    const mailto = `mailto:${customerEmail || ''}?subject=${subject}&body=${body}`;
+    Linking.openURL(mailto);
+  };
+
+  const handleSMS = () => {
+    const body = encodeURIComponent(`Your ${title.toLowerCase()} is ready: ${url}`);
+    const smsUrl = Platform.OS === 'ios' ? `sms:${customerPhone || ''}&body=${body}` : `sms:${customerPhone || ''}?body=${body}`;
+    Linking.openURL(smsUrl);
+  };
+
+  const handleShare = async () => {
+    try {
+      await Share.share({ message: `${title}: ${url}`, url });
+    } catch {}
+  };
+
+  const handleCopyLink = async () => {
+    if (Platform.OS === 'web') {
+      await navigator.clipboard.writeText(url);
+      Alert.alert('Copied', 'Link copied to clipboard');
+    }
+  };
+
+  return (
+    <Modal visible={visible} animationType="slide" presentationStyle="pageSheet" onRequestClose={onClose}>
+      <View style={previewStyles.container}>
+        <View style={previewStyles.header}>
+          <TouchableOpacity onPress={onClose}>
+            <Text style={previewStyles.closeBtn}>Close</Text>
+          </TouchableOpacity>
+          <Text style={previewStyles.headerTitle}>{title}</Text>
+          <View style={{ width: 44 }} />
+        </View>
+
+        {/* Preview iframe (web) or link (native) */}
+        {Platform.OS === 'web' ? (
+          <View style={previewStyles.iframeContainer}>
+            <iframe
+              src={url}
+              style={{ width: '100%', height: '100%', border: 'none', backgroundColor: '#fff' } as any}
+              title={title}
+            />
+          </View>
+        ) : (
+          <View style={previewStyles.linkContainer}>
+            <Text style={previewStyles.linkText}>Document ready at:</Text>
+            <TouchableOpacity onPress={() => Linking.openURL(url)}>
+              <Text style={previewStyles.link}>{url}</Text>
+            </TouchableOpacity>
+          </View>
+        )}
+
+        {/* Send actions */}
+        <View style={previewStyles.actions}>
+          {customerEmail ? (
+            <TouchableOpacity style={previewStyles.sendBtn} onPress={handleEmail}>
+              <Text style={previewStyles.sendBtnText}>Email Customer</Text>
+            </TouchableOpacity>
+          ) : null}
+          {customerPhone ? (
+            <TouchableOpacity style={[previewStyles.sendBtn, previewStyles.smsBtnStyle]} onPress={handleSMS}>
+              <Text style={previewStyles.sendBtnText}>Text Customer</Text>
+            </TouchableOpacity>
+          ) : null}
+          <TouchableOpacity style={[previewStyles.sendBtn, previewStyles.shareBtnStyle]} onPress={handleShare}>
+            <Text style={previewStyles.sendBtnText}>Share</Text>
+          </TouchableOpacity>
+          {Platform.OS === 'web' && (
+            <TouchableOpacity style={[previewStyles.sendBtn, previewStyles.copyBtnStyle]} onPress={handleCopyLink}>
+              <Text style={[previewStyles.sendBtnText, { color: Colors.text }]}>Copy Link</Text>
+            </TouchableOpacity>
+          )}
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
+const previewStyles = StyleSheet.create({
+  container: { flex: 1, backgroundColor: Colors.background },
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: Theme.layout.screenPadding,
+    paddingTop: Theme.space.xl,
+    paddingBottom: Theme.space.md,
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.border,
+    backgroundColor: Colors.surface,
+  },
+  headerTitle: { fontSize: Theme.font.size.subtitle, fontWeight: Theme.font.weight.semibold, color: Colors.text },
+  closeBtn: { fontSize: Theme.font.size.body, color: Colors.primary, fontWeight: Theme.font.weight.semibold },
+  iframeContainer: { flex: 1, backgroundColor: '#fff' },
+  linkContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 24 },
+  linkText: { fontSize: 16, color: Colors.textSecondary, marginBottom: 12 },
+  link: { fontSize: 14, color: Colors.primary, textDecorationLine: 'underline' },
+  actions: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    padding: Theme.layout.screenPadding,
+    paddingBottom: 32,
+    backgroundColor: Colors.surface,
+    borderTopWidth: 1,
+    borderTopColor: Colors.border,
+  },
+  sendBtn: {
+    flex: 1,
+    minWidth: 120,
+    backgroundColor: Colors.primary,
+    paddingVertical: 14,
+    borderRadius: Theme.radius.md,
+    alignItems: 'center',
+  },
+  smsBtnStyle: { backgroundColor: '#1D4ED8' },
+  shareBtnStyle: { backgroundColor: Colors.ai },
+  copyBtnStyle: { backgroundColor: Colors.surface, borderWidth: 1, borderColor: Colors.border },
+  sendBtnText: { fontSize: Theme.font.size.body, fontWeight: Theme.font.weight.semibold, color: '#fff' },
+});
 
 // ─── Estimate Detail Modal ───────────────────────────────────────────────────
 
@@ -135,6 +352,8 @@ function EstimateDetailModal({
   onStatusChange,
   onGeneratePdf,
   onGenerateContract,
+  onPreview,
+  onSend,
   generatingPdf,
   generatingContract,
 }: {
@@ -144,6 +363,8 @@ function EstimateDetailModal({
   onStatusChange: (id: string, status: EstimateStatus) => void;
   onGeneratePdf: (id: string) => void;
   onGenerateContract: (id: string) => void;
+  onPreview: (type: 'estimate' | 'contract', estimate: Estimate) => void;
+  onSend: (type: 'estimate' | 'contract', estimate: Estimate) => void;
   generatingPdf: boolean;
   generatingContract: boolean;
 }) {
@@ -154,20 +375,6 @@ function EstimateDetailModal({
   const customerPhone = estimate.customers?.phone || estimate.customer_phone || null;
   const estimateNumber = estimate.id.slice(0, 8).toUpperCase();
   const lineItems: LineItem[] = Array.isArray(estimate.line_items) ? estimate.line_items : [];
-
-  const handleShare = async () => {
-    const url = estimate.contract_url || estimate.pdf_url;
-    if (!url) {
-      Alert.alert('No Document', 'Generate a PDF or contract first before sharing.');
-      return;
-    }
-    try {
-      await Share.share({
-        message: `Estimate #${estimateNumber} - ${formatCurrency(estimate.total || 0)}\n${url}`,
-        url,
-      });
-    } catch {}
-  };
 
   return (
     <Modal visible={visible} animationType="slide" presentationStyle="pageSheet" onRequestClose={onClose}>
@@ -259,59 +466,565 @@ function EstimateDetailModal({
             </View>
           ) : null}
 
-          {/* Contract status */}
-          {estimate.contract_url ? (
-            <View style={[detailStyles.section, { borderLeftWidth: 3, borderLeftColor: Colors.primary }]}>
-              <Text style={detailStyles.sectionTitle}>Contract</Text>
-              <Text style={{ fontSize: Theme.font.size.body, color: Colors.textSecondary }}>
-                Contract generated and ready to share.
-              </Text>
-            </View>
-          ) : null}
+          {/* Documents section */}
+          <View style={detailStyles.section}>
+            <Text style={detailStyles.sectionTitle}>Documents</Text>
 
-          {/* Actions */}
-          <View style={detailStyles.actions}>
-            <TouchableOpacity
-              style={[detailStyles.actionBtn, { backgroundColor: '#1a5c1a' }]}
-              onPress={() => onGenerateContract(estimate.id)}
-              disabled={generatingContract}
-            >
-              {generatingContract ? (
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                  <ActivityIndicator size="small" color="#fff" />
-                  <Text style={detailStyles.actionBtnPrimaryText}>AI building contract...</Text>
+            {/* Estimate PDF */}
+            <View style={detailStyles.docRow}>
+              <View style={{ flex: 1 }}>
+                <Text style={detailStyles.docLabel}>Estimate Document</Text>
+                <Text style={detailStyles.docStatus}>
+                  {estimate.pdf_url ? 'Ready' : 'Not generated'}
+                </Text>
+              </View>
+              {estimate.pdf_url ? (
+                <View style={{ flexDirection: 'row', gap: 8 }}>
+                  <TouchableOpacity
+                    style={detailStyles.docBtn}
+                    onPress={() => onPreview('estimate', estimate)}
+                  >
+                    <Text style={detailStyles.docBtnText}>Preview</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[detailStyles.docBtn, { backgroundColor: Colors.primary }]}
+                    onPress={() => onSend('estimate', estimate)}
+                  >
+                    <Text style={[detailStyles.docBtnText, { color: '#fff' }]}>Send</Text>
+                  </TouchableOpacity>
                 </View>
               ) : (
-                <Text style={detailStyles.actionBtnPrimaryText}>
-                  {estimate.contract_url ? 'Regenerate Contract' : 'Generate Contract'}
+                <TouchableOpacity
+                  style={[detailStyles.docBtn, { backgroundColor: Colors.primary }]}
+                  onPress={() => onGeneratePdf(estimate.id)}
+                  disabled={generatingPdf}
+                >
+                  {generatingPdf ? (
+                    <ActivityIndicator size="small" color="#fff" />
+                  ) : (
+                    <Text style={[detailStyles.docBtnText, { color: '#fff' }]}>Generate</Text>
+                  )}
+                </TouchableOpacity>
+              )}
+            </View>
+
+            {/* Contract */}
+            <View style={[detailStyles.docRow, { marginTop: 12 }]}>
+              <View style={{ flex: 1 }}>
+                <Text style={detailStyles.docLabel}>Contract</Text>
+                <Text style={detailStyles.docStatus}>
+                  {estimate.contract_url ? 'Ready' : 'Not generated'}
                 </Text>
-              )}
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[detailStyles.actionBtn, detailStyles.actionBtnPrimary]}
-              onPress={() => onGeneratePdf(estimate.id)}
-              disabled={generatingPdf}
-            >
-              {generatingPdf ? (
-                <ActivityIndicator size="small" color="#fff" />
+              </View>
+              {estimate.contract_url ? (
+                <View style={{ flexDirection: 'row', gap: 8 }}>
+                  <TouchableOpacity
+                    style={detailStyles.docBtn}
+                    onPress={() => onPreview('contract', estimate)}
+                  >
+                    <Text style={detailStyles.docBtnText}>Preview</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[detailStyles.docBtn, { backgroundColor: '#1a5c1a' }]}
+                    onPress={() => onSend('contract', estimate)}
+                  >
+                    <Text style={[detailStyles.docBtnText, { color: '#fff' }]}>Send</Text>
+                  </TouchableOpacity>
+                </View>
               ) : (
-                <Text style={detailStyles.actionBtnPrimaryText}>Generate PDF</Text>
+                <TouchableOpacity
+                  style={[detailStyles.docBtn, { backgroundColor: '#1a5c1a' }]}
+                  onPress={() => onGenerateContract(estimate.id)}
+                  disabled={generatingContract}
+                >
+                  {generatingContract ? (
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                      <ActivityIndicator size="small" color="#fff" />
+                      <Text style={[detailStyles.docBtnText, { color: '#fff' }]}>AI building...</Text>
+                    </View>
+                  ) : (
+                    <Text style={[detailStyles.docBtnText, { color: '#fff' }]}>AI Generate</Text>
+                  )}
+                </TouchableOpacity>
               )}
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[detailStyles.actionBtn, detailStyles.actionBtnSecondary]}
-              onPress={handleShare}
-            >
-              <Text style={detailStyles.actionBtnSecondaryText}>Share</Text>
-            </TouchableOpacity>
+            </View>
           </View>
+
+          {/* Quick send all */}
+          {(estimate.pdf_url || estimate.contract_url) && (customerEmail || customerPhone) && (
+            <View style={detailStyles.section}>
+              <Text style={detailStyles.sectionTitle}>Quick Send</Text>
+              {customerEmail && (
+                <TouchableOpacity
+                  style={detailStyles.quickSendBtn}
+                  onPress={() => {
+                    const url = estimate.contract_url || estimate.pdf_url;
+                    const subject = encodeURIComponent(`Estimate #${estimateNumber}`);
+                    const body = encodeURIComponent(`Hi ${customerName},\n\nPlease review your estimate here:\n${url}\n\nThank you!`);
+                    Linking.openURL(`mailto:${customerEmail}?subject=${subject}&body=${body}`);
+                  }}
+                >
+                  <Text style={detailStyles.quickSendIcon}>@</Text>
+                  <Text style={detailStyles.quickSendText}>Email to {customerEmail}</Text>
+                </TouchableOpacity>
+              )}
+              {customerPhone && (
+                <TouchableOpacity
+                  style={detailStyles.quickSendBtn}
+                  onPress={() => {
+                    const url = estimate.contract_url || estimate.pdf_url;
+                    const body = encodeURIComponent(`Hi ${customerName}, your estimate is ready: ${url}`);
+                    const smsUrl = Platform.OS === 'ios' ? `sms:${customerPhone}&body=${body}` : `sms:${customerPhone}?body=${body}`;
+                    Linking.openURL(smsUrl);
+                  }}
+                >
+                  <Text style={detailStyles.quickSendIcon}>#</Text>
+                  <Text style={detailStyles.quickSendText}>Text to {customerPhone}</Text>
+                </TouchableOpacity>
+              )}
+            </View>
+          )}
         </ScrollView>
       </View>
     </Modal>
   );
 }
 
-// ─── Create Estimate Modal ───────────────────────────────────────────────────
+// ─── Voice Estimate Creator ─────────────────────────────────────────────────
+
+function VoiceEstimateModal({
+  visible,
+  onClose,
+  companyId,
+  companyName,
+  onCreated,
+}: {
+  visible: boolean;
+  onClose: () => void;
+  companyId: string;
+  companyName: string;
+  onCreated: (estimate: Estimate) => void;
+}) {
+  const { isListening, transcript, startListening, stopListening, setTranscript } = useVoiceInput();
+  const [manualInput, setManualInput] = useState('');
+  const [parsing, setParsing] = useState(false);
+  const [parsed, setParsed] = useState<{
+    customerName: string;
+    customerEmail: string;
+    customerPhone: string;
+    lineItems: LineItem[];
+    notes: string;
+    taxRate: number;
+  } | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [editMode, setEditMode] = useState(false);
+
+  const inputText = transcript || manualInput;
+
+  const resetAll = () => {
+    setManualInput('');
+    setTranscript('');
+    setParsed(null);
+    setEditMode(false);
+  };
+
+  const handleClose = () => {
+    resetAll();
+    if (isListening) stopListening();
+    onClose();
+  };
+
+  const handleParse = async () => {
+    if (!inputText.trim()) {
+      Alert.alert('Nothing to Parse', 'Describe the job first — speak or type.');
+      return;
+    }
+
+    if (!isAIConfigured()) {
+      Alert.alert('AI Not Configured', 'Add your OpenRouter API key in Settings to use AI features.');
+      return;
+    }
+
+    setParsing(true);
+    try {
+      const result = await aiChat([
+        {
+          role: 'system',
+          content: `You are an estimating assistant for "${companyName}", a professional tree service company. Extract estimate details from a spoken or typed job description. Be smart about tree service pricing — understand common jobs like tree removal, trimming, stump grinding, pruning, lot clearing, emergency storm work, etc. If no prices are mentioned, suggest realistic market rates for the area. Always break complex jobs into individual line items. Return ONLY valid JSON.`,
+        },
+        {
+          role: 'user',
+          content: `Parse this job description into an estimate:
+
+"${inputText}"
+
+Return JSON:
+{
+  "customerName": "name if mentioned, otherwise empty string",
+  "customerPhone": "phone if mentioned, otherwise empty string",
+  "customerEmail": "email if mentioned, otherwise empty string",
+  "lineItems": [
+    { "description": "Clear, professional description of the work", "qty": 1, "rate": 0.00 }
+  ],
+  "notes": "Any additional context from the description that doesn't fit in line items",
+  "taxRate": 0,
+  "confidence": "high/medium/low — how confident you are in the pricing"
+}
+
+Rules:
+- Break the job into separate line items (e.g., removal, stump grinding, cleanup are separate)
+- Use professional descriptions (e.g., "Remove 40ft oak tree — cut to ground level" not just "remove tree")
+- Include qty (number of trees, hours, etc.) and realistic rate
+- If they mention a total price, reverse-engineer the line items to match
+- If no price mentioned, use typical tree service rates for the work described
+- Set taxRate based on typical rates (usually 0 if not mentioned)`,
+        },
+      ], { model: 'claude', maxTokens: 800, temperature: 0.3 });
+
+      const match = result.match(/\{[\s\S]*\}/);
+      if (!match) throw new Error('Failed to parse AI response');
+
+      const data = JSON.parse(match[0]);
+      setParsed({
+        customerName: data.customerName || '',
+        customerEmail: data.customerEmail || '',
+        customerPhone: data.customerPhone || '',
+        lineItems: (data.lineItems || []).map((item: any) => ({
+          description: item.description || '',
+          qty: Number(item.qty) || 1,
+          rate: Number(item.rate) || 0,
+          amount: (Number(item.qty) || 1) * (Number(item.rate) || 0),
+        })),
+        notes: data.notes || '',
+        taxRate: Number(data.taxRate) || 0,
+      });
+    } catch (err: any) {
+      Alert.alert('Parse Error', 'AI could not understand the description. Try again with more detail.');
+    } finally {
+      setParsing(false);
+    }
+  };
+
+  const subtotal = parsed ? parsed.lineItems.reduce((sum, item) => sum + item.amount, 0) : 0;
+  const taxAmount = parsed ? subtotal * (parsed.taxRate / 100) : 0;
+  const total = subtotal + taxAmount;
+
+  const updateParsedItem = (index: number, field: keyof LineItem, value: string) => {
+    if (!parsed) return;
+    const updated = [...parsed.lineItems];
+    const item = { ...updated[index] };
+    if (field === 'description') item.description = value;
+    else if (field === 'qty') item.qty = parseFloat(value) || 0;
+    else if (field === 'rate') item.rate = parseFloat(value) || 0;
+    item.amount = item.qty * item.rate;
+    updated[index] = item;
+    setParsed({ ...parsed, lineItems: updated });
+  };
+
+  const addParsedItem = () => {
+    if (!parsed) return;
+    setParsed({ ...parsed, lineItems: [...parsed.lineItems, { description: '', qty: 1, rate: 0, amount: 0 }] });
+  };
+
+  const removeParsedItem = (index: number) => {
+    if (!parsed || parsed.lineItems.length <= 1) return;
+    setParsed({ ...parsed, lineItems: parsed.lineItems.filter((_, i) => i !== index) });
+  };
+
+  const handleSave = async () => {
+    if (!parsed || !parsed.lineItems.some(i => i.description.trim())) {
+      Alert.alert('Missing Items', 'Add at least one line item.');
+      return;
+    }
+
+    setSaving(true);
+    try {
+      let customerId = null;
+      if (parsed.customerName.trim()) {
+        const { data: newCustomer, error: custError } = await supabase
+          .from('customers')
+          .insert({
+            company_id: companyId,
+            name: parsed.customerName.trim(),
+            email: parsed.customerEmail.trim() || null,
+            phone: parsed.customerPhone.trim() || null,
+          })
+          .select()
+          .single();
+        if (!custError && newCustomer) customerId = newCustomer.id;
+      }
+
+      const validItems = parsed.lineItems.filter(i => i.description.trim()).map(i => ({
+        description: i.description.trim(),
+        qty: i.qty,
+        rate: i.rate,
+        amount: i.amount,
+      }));
+
+      const { data: estimate, error } = await supabase
+        .from('estimates')
+        .insert({
+          company_id: companyId,
+          customer_id: customerId,
+          customer_name: parsed.customerName.trim() || null,
+          customer_email: parsed.customerEmail.trim() || null,
+          customer_phone: parsed.customerPhone.trim() || null,
+          line_items: validItems,
+          subtotal,
+          tax: taxAmount,
+          tax_rate: parsed.taxRate,
+          total,
+          notes: parsed.notes.trim() || null,
+          status: 'draft',
+        })
+        .select('*, customers(name, email, phone)')
+        .single();
+
+      if (error) throw error;
+      if (estimate) {
+        onCreated(estimate);
+        handleClose();
+        Alert.alert('Estimate Saved', `Estimate for ${formatCurrency(total)} created.`);
+      }
+    } catch (err: any) {
+      Alert.alert('Error', err.message || 'Failed to save estimate');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  // Pulsing animation for mic
+  const pulseAnim = useRef(new Animated.Value(1)).current;
+  useEffect(() => {
+    if (isListening) {
+      Animated.loop(
+        Animated.sequence([
+          Animated.timing(pulseAnim, { toValue: 1.15, duration: 600, useNativeDriver: true }),
+          Animated.timing(pulseAnim, { toValue: 1, duration: 600, useNativeDriver: true }),
+        ])
+      ).start();
+    } else {
+      pulseAnim.setValue(1);
+    }
+  }, [isListening]);
+
+  return (
+    <Modal visible={visible} animationType="slide" presentationStyle="pageSheet" onRequestClose={handleClose}>
+      <KeyboardAvoidingView style={voiceStyles.container} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+        <View style={voiceStyles.header}>
+          <TouchableOpacity onPress={handleClose}>
+            <Text style={voiceStyles.cancelBtn}>Cancel</Text>
+          </TouchableOpacity>
+          <Text style={voiceStyles.headerTitle}>
+            {parsed ? 'Review Estimate' : 'Describe the Job'}
+          </Text>
+          <View style={{ width: 50 }} />
+        </View>
+
+        <ScrollView style={voiceStyles.scroll} contentContainerStyle={voiceStyles.scrollContent} keyboardShouldPersistTaps="handled">
+          {!parsed ? (
+            <>
+              {/* Voice input */}
+              <View style={voiceStyles.voiceSection}>
+                <Animated.View style={{ transform: [{ scale: pulseAnim }] }}>
+                  <TouchableOpacity
+                    style={[voiceStyles.micBtn, isListening && voiceStyles.micBtnActive]}
+                    onPress={isListening ? stopListening : startListening}
+                    activeOpacity={0.8}
+                  >
+                    <Text style={voiceStyles.micIcon}>{isListening ? '...' : 'MIC'}</Text>
+                  </TouchableOpacity>
+                </Animated.View>
+                <Text style={voiceStyles.voiceHint}>
+                  {isListening ? 'Listening... tap to stop' : 'Tap to describe the job'}
+                </Text>
+              </View>
+
+              {/* Divider */}
+              <View style={voiceStyles.divider}>
+                <View style={voiceStyles.dividerLine} />
+                <Text style={voiceStyles.dividerText}>or type it out</Text>
+                <View style={voiceStyles.dividerLine} />
+              </View>
+
+              {/* Manual text input */}
+              <TextInput
+                style={voiceStyles.textInput}
+                value={transcript || manualInput}
+                onChangeText={v => {
+                  if (transcript) setTranscript(v);
+                  else setManualInput(v);
+                }}
+                placeholder={`"Mrs. Johnson needs two oaks removed in the backyard, about 50 feet tall each, plus stump grinding. Quote around 4500 total. Her number is 555-0123."`}
+                placeholderTextColor={Colors.textTertiary}
+                multiline
+                numberOfLines={6}
+              />
+
+              {/* AI Parse button */}
+              <TouchableOpacity
+                style={[voiceStyles.parseBtn, !inputText.trim() && { opacity: 0.5 }]}
+                onPress={handleParse}
+                disabled={parsing || !inputText.trim()}
+              >
+                {parsing ? (
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+                    <ActivityIndicator size="small" color="#fff" />
+                    <Text style={voiceStyles.parseBtnText}>AI is building your estimate...</Text>
+                  </View>
+                ) : (
+                  <Text style={voiceStyles.parseBtnText}>Build Estimate with AI</Text>
+                )}
+              </TouchableOpacity>
+
+              <Text style={voiceStyles.tipText}>
+                Tip: Include customer name, what work needs done, tree sizes, quantities, and your price if you have one. AI will fill in the rest.
+              </Text>
+            </>
+          ) : (
+            <>
+              {/* Parsed estimate review */}
+              <Text style={voiceStyles.sectionLabel}>Customer</Text>
+              <View style={voiceStyles.fieldRow}>
+                <TextInput
+                  style={voiceStyles.fieldInput}
+                  value={parsed.customerName}
+                  onChangeText={v => setParsed({ ...parsed, customerName: v })}
+                  placeholder="Customer name"
+                  placeholderTextColor={Colors.textTertiary}
+                />
+              </View>
+              <View style={{ flexDirection: 'row', gap: 8 }}>
+                <TextInput
+                  style={[voiceStyles.fieldInput, { flex: 1 }]}
+                  value={parsed.customerPhone}
+                  onChangeText={v => setParsed({ ...parsed, customerPhone: v })}
+                  placeholder="Phone"
+                  placeholderTextColor={Colors.textTertiary}
+                  keyboardType="phone-pad"
+                />
+                <TextInput
+                  style={[voiceStyles.fieldInput, { flex: 1 }]}
+                  value={parsed.customerEmail}
+                  onChangeText={v => setParsed({ ...parsed, customerEmail: v })}
+                  placeholder="Email"
+                  placeholderTextColor={Colors.textTertiary}
+                  keyboardType="email-address"
+                  autoCapitalize="none"
+                />
+              </View>
+
+              <Text style={[voiceStyles.sectionLabel, { marginTop: 20 }]}>Line Items</Text>
+              {parsed.lineItems.map((item, i) => (
+                <View key={i} style={voiceStyles.lineItemCard}>
+                  <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <Text style={voiceStyles.lineItemNum}>Item {i + 1}</Text>
+                    {parsed.lineItems.length > 1 && (
+                      <TouchableOpacity onPress={() => removeParsedItem(i)}>
+                        <Text style={{ color: Colors.danger, fontSize: 13 }}>Remove</Text>
+                      </TouchableOpacity>
+                    )}
+                  </View>
+                  <TextInput
+                    style={voiceStyles.fieldInput}
+                    value={item.description}
+                    onChangeText={v => updateParsedItem(i, 'description', v)}
+                    placeholder="Description"
+                    placeholderTextColor={Colors.textTertiary}
+                  />
+                  <View style={{ flexDirection: 'row', gap: 8 }}>
+                    <View style={{ flex: 1 }}>
+                      <Text style={voiceStyles.miniLabel}>Qty</Text>
+                      <TextInput
+                        style={voiceStyles.numInput}
+                        value={item.qty > 0 ? String(item.qty) : ''}
+                        onChangeText={v => updateParsedItem(i, 'qty', v)}
+                        keyboardType="decimal-pad"
+                        placeholder="1"
+                        placeholderTextColor={Colors.textTertiary}
+                      />
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <Text style={voiceStyles.miniLabel}>Rate ($)</Text>
+                      <TextInput
+                        style={voiceStyles.numInput}
+                        value={item.rate > 0 ? String(item.rate) : ''}
+                        onChangeText={v => updateParsedItem(i, 'rate', v)}
+                        keyboardType="decimal-pad"
+                        placeholder="0.00"
+                        placeholderTextColor={Colors.textTertiary}
+                      />
+                    </View>
+                    <View style={{ flex: 1, justifyContent: 'flex-end' }}>
+                      <Text style={voiceStyles.miniLabel}>Amount</Text>
+                      <Text style={voiceStyles.amountDisplay}>{formatCurrency(item.amount)}</Text>
+                    </View>
+                  </View>
+                </View>
+              ))}
+
+              <TouchableOpacity style={voiceStyles.addItemBtn} onPress={addParsedItem}>
+                <Text style={voiceStyles.addItemText}>+ Add Line Item</Text>
+              </TouchableOpacity>
+
+              {/* Notes */}
+              <Text style={[voiceStyles.sectionLabel, { marginTop: 16 }]}>Notes</Text>
+              <TextInput
+                style={[voiceStyles.fieldInput, { minHeight: 60, textAlignVertical: 'top' }]}
+                value={parsed.notes}
+                onChangeText={v => setParsed({ ...parsed, notes: v })}
+                placeholder="Additional notes..."
+                placeholderTextColor={Colors.textTertiary}
+                multiline
+              />
+
+              {/* Totals */}
+              <View style={voiceStyles.totalsCard}>
+                <View style={voiceStyles.totalRow}>
+                  <Text style={voiceStyles.totalLabel}>Subtotal</Text>
+                  <Text style={voiceStyles.totalValue}>{formatCurrency(subtotal)}</Text>
+                </View>
+                {parsed.taxRate > 0 && (
+                  <View style={voiceStyles.totalRow}>
+                    <Text style={voiceStyles.totalLabel}>Tax ({parsed.taxRate}%)</Text>
+                    <Text style={voiceStyles.totalValue}>{formatCurrency(taxAmount)}</Text>
+                  </View>
+                )}
+                <View style={[voiceStyles.totalRow, { borderTopWidth: 1, borderTopColor: Colors.border, paddingTop: 8, marginTop: 4 }]}>
+                  <Text style={voiceStyles.grandTotalLabel}>Total</Text>
+                  <Text style={voiceStyles.grandTotalValue}>{formatCurrency(total)}</Text>
+                </View>
+              </View>
+
+              {/* Actions */}
+              <View style={{ gap: 10, marginTop: 20 }}>
+                <TouchableOpacity
+                  style={voiceStyles.saveBtn}
+                  onPress={handleSave}
+                  disabled={saving}
+                >
+                  {saving ? (
+                    <ActivityIndicator size="small" color="#fff" />
+                  ) : (
+                    <Text style={voiceStyles.saveBtnText}>Save Estimate</Text>
+                  )}
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={voiceStyles.redoBtn}
+                  onPress={() => setParsed(null)}
+                >
+                  <Text style={voiceStyles.redoBtnText}>Start Over</Text>
+                </TouchableOpacity>
+              </View>
+            </>
+          )}
+        </ScrollView>
+      </KeyboardAvoidingView>
+    </Modal>
+  );
+}
+
+// ─── Create Estimate Modal (Manual) ─────────────────────────────────────────
 
 function CreateEstimateModal({
   visible,
@@ -371,13 +1084,9 @@ function CreateEstimateModal({
     setLineItems(prev => {
       const updated = [...prev];
       const item = { ...updated[index] };
-      if (field === 'description') {
-        item.description = value;
-      } else if (field === 'qty') {
-        item.qty = parseFloat(value) || 0;
-      } else if (field === 'rate') {
-        item.rate = parseFloat(value) || 0;
-      }
+      if (field === 'description') item.description = value;
+      else if (field === 'qty') item.qty = parseFloat(value) || 0;
+      else if (field === 'rate') item.rate = parseFloat(value) || 0;
       item.amount = item.qty * item.rate;
       updated[index] = item;
       return updated;
@@ -421,7 +1130,6 @@ function CreateEstimateModal({
     if (generatePdf) setGeneratingPdf(true);
 
     try {
-      // If new customer, create them first
       let customerId = selectedCustomerId;
       if (!customerId) {
         const { data: newCustomer, error: custError } = await supabase
@@ -499,7 +1207,7 @@ function CreateEstimateModal({
           <TouchableOpacity onPress={handleClose}>
             <Text style={createStyles.cancelBtn}>Cancel</Text>
           </TouchableOpacity>
-          <Text style={createStyles.headerTitle}>New Estimate</Text>
+          <Text style={createStyles.headerTitle}>Manual Estimate</Text>
           <View style={{ width: 50 }} />
         </View>
 
@@ -705,14 +1413,19 @@ export default function EstimatesScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [activeFilter, setActiveFilter] = useState<EstimateStatus | 'all'>('all');
 
-  // Create modal
+  // Modals
   const [showCreate, setShowCreate] = useState(false);
-
-  // Detail modal
+  const [showVoice, setShowVoice] = useState(false);
   const [selectedEstimate, setSelectedEstimate] = useState<Estimate | null>(null);
   const [showDetail, setShowDetail] = useState(false);
   const [generatingPdf, setGeneratingPdf] = useState(false);
   const [generatingContract, setGeneratingContract] = useState(false);
+
+  // Preview
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const [previewTitle, setPreviewTitle] = useState('');
+  const [previewEstimate, setPreviewEstimate] = useState<Estimate | null>(null);
+  const [showPreview, setShowPreview] = useState(false);
 
   const fetchEstimates = useCallback(async () => {
     if (!company) return;
@@ -727,12 +1440,8 @@ export default function EstimatesScreen() {
 
   const refresh = useCallback(async () => {
     setRefreshing(true);
-    try {
-      await fetchEstimates();
-    } catch {}
-    finally {
-      setRefreshing(false);
-    }
+    try { await fetchEstimates(); } catch {}
+    finally { setRefreshing(false); }
   }, [fetchEstimates]);
 
   useEffect(() => {
@@ -762,7 +1471,7 @@ export default function EstimatesScreen() {
       if (data?.pdfUrl) {
         setEstimates(es => es.map(e => e.id === id ? { ...e, pdf_url: data.pdfUrl } : e));
         setSelectedEstimate(e => e?.id === id ? { ...e, pdf_url: data.pdfUrl } : e);
-        Alert.alert('PDF Generated', 'The estimate PDF has been created successfully.');
+        Alert.alert('Estimate Generated', 'Ready to preview and send.');
       }
     } catch (err: any) {
       Alert.alert('Error', err.message || 'Failed to generate PDF');
@@ -825,7 +1534,6 @@ Return JSON with these keys:
         return;
       }
 
-      // Send to edge function to render HTML contract
       const { data, error } = await supabase.functions.invoke('generate-contract', {
         body: { estimateId: id, sections },
       });
@@ -834,13 +1542,26 @@ Return JSON with these keys:
       if (data?.contractUrl) {
         setEstimates(es => es.map(e => e.id === id ? { ...e, contract_url: data.contractUrl } : e));
         setSelectedEstimate(e => e?.id === id ? { ...e, contract_url: data.contractUrl } : e);
-        Alert.alert('Contract Generated', 'AI-customized contract is ready to share.');
+        Alert.alert('Contract Generated', 'AI-customized contract is ready to preview and send.');
       }
     } catch (err: any) {
       Alert.alert('Error', err.message || 'Failed to generate contract');
     } finally {
       setGeneratingContract(false);
     }
+  };
+
+  const handlePreview = (type: 'estimate' | 'contract', estimate: Estimate) => {
+    const url = type === 'estimate' ? estimate.pdf_url : estimate.contract_url;
+    if (!url) return;
+    setPreviewUrl(url);
+    setPreviewTitle(type === 'estimate' ? `Estimate #${estimate.id.slice(0, 8).toUpperCase()}` : 'Contract');
+    setPreviewEstimate(estimate);
+    setShowPreview(true);
+  };
+
+  const handleSend = (type: 'estimate' | 'contract', estimate: Estimate) => {
+    handlePreview(type, estimate);
   };
 
   const handleEstimateCreated = (estimate: Estimate) => {
@@ -861,18 +1582,12 @@ Return JSON with these keys:
       {/* Header */}
       <View style={styles.header}>
         <Text style={styles.headerTitle}>Estimates</Text>
-        <View style={{ flexDirection: 'row', gap: 8 }}>
-          <TouchableOpacity
-            style={[styles.addBtn, { backgroundColor: Colors.surface, borderWidth: 1, borderColor: Colors.border }]}
-            onPress={() => router.push('/(tabs)/contract-settings' as any)}
-            accessibilityLabel="Contract Settings"
-          >
-            <Text style={[styles.addBtnText, { color: Colors.text }]}>Contract</Text>
-          </TouchableOpacity>
-          <TouchableOpacity style={styles.addBtn} onPress={() => setShowCreate(true)}>
-            <Text style={styles.addBtnText}>+ New</Text>
-          </TouchableOpacity>
-        </View>
+        <TouchableOpacity
+          style={[styles.headerBtn, { backgroundColor: Colors.surface, borderWidth: 1, borderColor: Colors.border }]}
+          onPress={() => router.push('/(tabs)/contract-settings' as any)}
+        >
+          <Text style={[styles.headerBtnText, { color: Colors.text }]}>Settings</Text>
+        </TouchableOpacity>
       </View>
 
       {/* Filter bar */}
@@ -918,15 +1633,15 @@ Return JSON with these keys:
         >
           {filteredEstimates.length === 0 ? (
             <EmptyState
-              icon="📄"
+              icon="📋"
               title={activeFilter === 'all' ? 'No estimates yet' : `No ${activeFilter} estimates`}
               description={
                 activeFilter === 'all'
-                  ? 'Create your first estimate to get started.'
+                  ? 'Create your first estimate — describe the job or fill it out manually.'
                   : `You have no estimates with ${activeFilter} status.`
               }
               actionLabel={activeFilter === 'all' ? 'Create estimate' : undefined}
-              onAction={activeFilter === 'all' ? () => setShowCreate(true) : undefined}
+              onAction={activeFilter === 'all' ? () => setShowVoice(true) : undefined}
             />
           ) : (
             filteredEstimates.map(estimate => (
@@ -936,10 +1651,16 @@ Return JSON with these keys:
         </ScrollView>
       )}
 
-      {/* FAB */}
-      <TouchableOpacity style={styles.fab} onPress={() => setShowCreate(true)}>
-        <Text style={styles.fabText}>+</Text>
-      </TouchableOpacity>
+      {/* FABs */}
+      <View style={styles.fabContainer}>
+        <TouchableOpacity style={styles.fabSecondary} onPress={() => setShowCreate(true)}>
+          <Text style={styles.fabSecondaryText}>Manual</Text>
+        </TouchableOpacity>
+        <TouchableOpacity style={styles.fab} onPress={() => setShowVoice(true)}>
+          <Text style={styles.fabIcon}>MIC</Text>
+          <Text style={styles.fabLabel}>New Estimate</Text>
+        </TouchableOpacity>
+      </View>
 
       {/* Detail Modal */}
       <EstimateDetailModal
@@ -952,11 +1673,24 @@ Return JSON with these keys:
         onStatusChange={handleStatusChange}
         onGeneratePdf={handleGeneratePdf}
         onGenerateContract={handleGenerateContract}
+        onPreview={handlePreview}
+        onSend={handleSend}
         generatingPdf={generatingPdf}
         generatingContract={generatingContract}
       />
 
-      {/* Create Modal */}
+      {/* Voice Create Modal */}
+      {company && (
+        <VoiceEstimateModal
+          visible={showVoice}
+          onClose={() => setShowVoice(false)}
+          companyId={company.id}
+          companyName={company.name || 'our company'}
+          onCreated={handleEstimateCreated}
+        />
+      )}
+
+      {/* Manual Create Modal */}
       {company && (
         <CreateEstimateModal
           visible={showCreate}
@@ -965,6 +1699,20 @@ Return JSON with these keys:
           onCreated={handleEstimateCreated}
         />
       )}
+
+      {/* Preview Modal */}
+      <PreviewModal
+        visible={showPreview}
+        onClose={() => {
+          setShowPreview(false);
+          setPreviewUrl(null);
+          setPreviewEstimate(null);
+        }}
+        url={previewUrl}
+        title={previewTitle}
+        customerEmail={previewEstimate?.customers?.email || previewEstimate?.customer_email}
+        customerPhone={previewEstimate?.customers?.phone || previewEstimate?.customer_phone}
+      />
     </View>
   );
 }
@@ -1046,17 +1794,180 @@ const detailStyles = StyleSheet.create({
   grandTotalLabel: { fontSize: Theme.font.size.subtitle, fontWeight: Theme.font.weight.bold, color: Colors.primary },
   grandTotalValue: { fontSize: Theme.font.size.subtitle, fontWeight: Theme.font.weight.bold, color: Colors.primary },
   notesText: { fontSize: Theme.font.size.body, color: Colors.textSecondary, lineHeight: 22 },
-  actions: { gap: Theme.space.sm },
-  actionBtn: {
+  // Document rows
+  docRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  docLabel: { fontSize: Theme.font.size.body, color: Colors.text, fontWeight: Theme.font.weight.medium },
+  docStatus: { fontSize: Theme.font.size.small, color: Colors.textTertiary, marginTop: 2 },
+  docBtn: {
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: Theme.radius.md,
+    backgroundColor: Colors.surfaceSecondary,
+    borderWidth: 1,
+    borderColor: Colors.border,
+  },
+  docBtnText: { fontSize: Theme.font.size.small, fontWeight: Theme.font.weight.semibold, color: Colors.text },
+  // Quick send
+  quickSendBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+    backgroundColor: Colors.primary + '15',
+    borderRadius: Theme.radius.md,
+    borderWidth: 1,
+    borderColor: Colors.primary + '30',
+    marginTop: 4,
+  },
+  quickSendIcon: { fontSize: 16, color: Colors.primary, fontWeight: Theme.font.weight.bold, width: 24, textAlign: 'center' },
+  quickSendText: { fontSize: Theme.font.size.body, color: Colors.primary, fontWeight: Theme.font.weight.medium },
+});
+
+// ─── Voice Modal Styles ─────────────────────────────────────────────────────
+
+const voiceStyles = StyleSheet.create({
+  container: { flex: 1, backgroundColor: Colors.background },
+  header: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: Theme.layout.screenPadding,
+    paddingTop: Theme.space.xl,
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.border,
+    backgroundColor: Colors.surface,
+  },
+  headerTitle: { fontSize: Theme.font.size.subtitle, fontWeight: Theme.font.weight.semibold, color: Colors.text },
+  cancelBtn: { fontSize: Theme.font.size.body, color: Colors.textSecondary },
+  scroll: { flex: 1 },
+  scrollContent: { padding: Theme.layout.screenPadding, paddingBottom: 60 },
+  voiceSection: { alignItems: 'center', paddingVertical: 32 },
+  micBtn: {
+    width: 100,
+    height: 100,
+    borderRadius: 50,
+    backgroundColor: Colors.primary,
+    alignItems: 'center',
+    justifyContent: 'center',
+    ...Theme.shadow.lg,
+  },
+  micBtnActive: { backgroundColor: Colors.danger },
+  micIcon: { fontSize: 18, fontWeight: Theme.font.weight.bold, color: '#fff', letterSpacing: 1 },
+  voiceHint: { marginTop: 16, fontSize: Theme.font.size.body, color: Colors.textSecondary, textAlign: 'center' },
+  divider: { flexDirection: 'row', alignItems: 'center', gap: 12, marginVertical: 16 },
+  dividerLine: { flex: 1, height: 1, backgroundColor: Colors.border },
+  dividerText: { fontSize: Theme.font.size.small, color: Colors.textTertiary },
+  textInput: {
+    backgroundColor: Colors.surface,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    borderRadius: Theme.radius.lg,
+    padding: Theme.space.lg,
+    fontSize: Theme.font.size.body,
+    color: Colors.text,
+    minHeight: 120,
+    textAlignVertical: 'top',
+    lineHeight: 22,
+  },
+  parseBtn: {
+    backgroundColor: Colors.ai,
+    paddingVertical: 16,
+    borderRadius: Theme.radius.md,
+    alignItems: 'center',
+    marginTop: 16,
+  },
+  parseBtnText: { fontSize: Theme.font.size.body, fontWeight: Theme.font.weight.bold, color: '#fff' },
+  tipText: { fontSize: Theme.font.size.small, color: Colors.textTertiary, textAlign: 'center', marginTop: 16, lineHeight: 20 },
+  // Parsed estimate review
+  sectionLabel: {
+    fontSize: Theme.font.size.small,
+    fontWeight: Theme.font.weight.bold,
+    color: Colors.primary,
+    textTransform: 'uppercase',
+    letterSpacing: 0.8,
+    marginBottom: 8,
+  },
+  fieldRow: { marginBottom: 10 },
+  fieldInput: {
+    backgroundColor: Colors.surface,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    borderRadius: Theme.radius.md,
+    padding: Theme.space.md,
+    fontSize: Theme.font.size.body,
+    color: Colors.text,
+    marginBottom: 8,
+  },
+  lineItemCard: {
+    backgroundColor: Colors.surface,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    borderRadius: Theme.radius.lg,
+    padding: Theme.space.md,
+    gap: 8,
+    marginBottom: 10,
+  },
+  lineItemNum: { fontSize: 12, fontWeight: Theme.font.weight.semibold, color: Colors.textTertiary, textTransform: 'uppercase' },
+  miniLabel: { fontSize: 11, color: Colors.textTertiary, marginBottom: 4 },
+  numInput: {
+    backgroundColor: Colors.background,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    borderRadius: Theme.radius.sm,
+    padding: Theme.space.sm,
+    fontSize: Theme.font.size.body,
+    color: Colors.text,
+    textAlign: 'center',
+  },
+  amountDisplay: {
+    fontSize: Theme.font.size.body,
+    fontWeight: Theme.font.weight.semibold,
+    color: Colors.primary,
+    textAlign: 'center',
+    paddingVertical: Theme.space.sm,
+  },
+  addItemBtn: {
+    paddingVertical: 12,
+    borderRadius: Theme.radius.md,
+    borderWidth: 1,
+    borderColor: Colors.primary + '40',
+    borderStyle: 'dashed',
+    alignItems: 'center',
+  },
+  addItemText: { fontSize: Theme.font.size.body, color: Colors.primary, fontWeight: Theme.font.weight.medium },
+  totalsCard: {
+    backgroundColor: Colors.surface,
+    borderRadius: Theme.radius.lg,
+    padding: Theme.space.lg,
+    marginTop: 16,
+    gap: 4,
+  },
+  totalRow: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 4 },
+  totalLabel: { fontSize: Theme.font.size.body, color: Colors.textSecondary },
+  totalValue: { fontSize: Theme.font.size.body, color: Colors.text },
+  grandTotalLabel: { fontSize: Theme.font.size.subtitle, fontWeight: Theme.font.weight.bold, color: Colors.primary },
+  grandTotalValue: { fontSize: Theme.font.size.subtitle, fontWeight: Theme.font.weight.bold, color: Colors.primary },
+  saveBtn: {
+    backgroundColor: Colors.primary,
+    paddingVertical: 16,
+    borderRadius: Theme.radius.md,
+    alignItems: 'center',
+  },
+  saveBtnText: { fontSize: Theme.font.size.body, fontWeight: Theme.font.weight.bold, color: '#fff' },
+  redoBtn: {
+    backgroundColor: Colors.surface,
+    borderWidth: 1,
+    borderColor: Colors.border,
     paddingVertical: 14,
     borderRadius: Theme.radius.md,
     alignItems: 'center',
-    justifyContent: 'center',
   },
-  actionBtnPrimary: { backgroundColor: Colors.primary },
-  actionBtnPrimaryText: { fontSize: Theme.font.size.body, fontWeight: Theme.font.weight.semibold, color: '#fff' },
-  actionBtnSecondary: { backgroundColor: Colors.surface, borderWidth: 1, borderColor: Colors.border },
-  actionBtnSecondaryText: { fontSize: Theme.font.size.body, fontWeight: Theme.font.weight.semibold, color: Colors.text },
+  redoBtnText: { fontSize: Theme.font.size.body, fontWeight: Theme.font.weight.semibold, color: Colors.text },
 });
 
 // ─── Create Modal Styles ─────────────────────────────────────────────────────
@@ -1253,13 +2164,12 @@ const styles = StyleSheet.create({
     borderBottomColor: Colors.border,
   },
   headerTitle: { fontSize: Theme.font.size.headline, fontWeight: Theme.font.weight.bold, color: Colors.text },
-  addBtn: {
-    backgroundColor: Colors.primary,
+  headerBtn: {
     paddingHorizontal: Theme.space.lg,
     paddingVertical: Theme.space.sm,
     borderRadius: Theme.radius.md,
   },
-  addBtnText: { color: Colors.textInverse, fontWeight: Theme.font.weight.semibold, fontSize: Theme.font.size.body },
+  headerBtnText: { fontWeight: Theme.font.weight.semibold, fontSize: Theme.font.size.body },
   filterScroll: { backgroundColor: Colors.surface, borderBottomWidth: 1, borderBottomColor: Colors.border },
   filterContent: { paddingHorizontal: Theme.layout.screenPadding, paddingVertical: 10, gap: 8, flexDirection: 'row' },
   filterChip: {
@@ -1278,7 +2188,7 @@ const styles = StyleSheet.create({
   filterChipTextActive: { color: Colors.primary, fontWeight: Theme.font.weight.semibold },
   loadingCenter: { flex: 1, justifyContent: 'center', alignItems: 'center', paddingTop: 80 },
   list: { flex: 1 },
-  listContent: { padding: Theme.layout.screenPadding, gap: Theme.space.md, paddingBottom: 100 },
+  listContent: { padding: Theme.layout.screenPadding, gap: Theme.space.md, paddingBottom: 120 },
   card: {
     backgroundColor: Colors.surface,
     borderRadius: Theme.radius.xl,
@@ -1293,17 +2203,45 @@ const styles = StyleSheet.create({
   cardFooter: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 2 },
   cardDate: { fontSize: Theme.font.size.small, color: Colors.textSecondary },
   cardTotal: { fontSize: Theme.font.size.body, fontWeight: Theme.font.weight.bold, color: Colors.primary },
-  fab: {
+  cardDocs: { flexDirection: 'row', gap: 6, marginTop: 4 },
+  cardDocBadge: {
+    fontSize: 11,
+    fontWeight: Theme.font.weight.semibold,
+    color: Colors.primary,
+    backgroundColor: Colors.primary + '20',
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 10,
+    overflow: 'hidden',
+  },
+  // FABs
+  fabContainer: {
     position: 'absolute',
     bottom: 24,
-    right: 24,
-    width: 56,
-    height: 56,
-    borderRadius: 28,
-    backgroundColor: Colors.primary,
+    right: 20,
+    alignItems: 'flex-end',
+    gap: 10,
+  },
+  fabSecondary: {
+    paddingHorizontal: 18,
+    paddingVertical: 10,
+    borderRadius: Theme.radius.full,
+    backgroundColor: Colors.surface,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    ...Theme.shadow.sm,
+  },
+  fabSecondaryText: { fontSize: Theme.font.size.small, fontWeight: Theme.font.weight.semibold, color: Colors.text },
+  fab: {
+    flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
+    gap: 8,
+    paddingHorizontal: 20,
+    paddingVertical: 14,
+    borderRadius: Theme.radius.full,
+    backgroundColor: Colors.primary,
     ...Theme.shadow.lg,
   },
-  fabText: { fontSize: 28, color: Colors.textInverse, lineHeight: 32 },
+  fabIcon: { fontSize: 13, fontWeight: Theme.font.weight.bold, color: '#fff', letterSpacing: 1 },
+  fabLabel: { fontSize: Theme.font.size.body, fontWeight: Theme.font.weight.bold, color: '#fff' },
 });
