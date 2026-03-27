@@ -75,6 +75,12 @@ export default function TabsLayout() {
           href: null,
         }}
       />
+      <Tabs.Screen
+        name="contract-settings"
+        options={{
+          href: null,
+        }}
+      />
     </Tabs>
   );
 }

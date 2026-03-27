@@ -19,6 +19,8 @@ import { Theme } from '@/constants/Theme';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { useAuthStore } from '@/lib/stores/authStore';
 import { supabase } from '@/lib/supabase';
+import { aiChat, isAIConfigured } from '@/lib/ai';
+import { router } from 'expo-router';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -53,6 +55,7 @@ interface Estimate {
   status: EstimateStatus;
   tax_rate: number;
   pdf_url: string | null;
+  contract_url: string | null;
   created_at: string;
   customers: { name: string; email: string | null; phone: string | null } | null;
 }
@@ -131,14 +134,18 @@ function EstimateDetailModal({
   onClose,
   onStatusChange,
   onGeneratePdf,
+  onGenerateContract,
   generatingPdf,
+  generatingContract,
 }: {
   estimate: Estimate | null;
   visible: boolean;
   onClose: () => void;
   onStatusChange: (id: string, status: EstimateStatus) => void;
   onGeneratePdf: (id: string) => void;
+  onGenerateContract: (id: string) => void;
   generatingPdf: boolean;
+  generatingContract: boolean;
 }) {
   if (!estimate) return null;
 
@@ -149,14 +156,15 @@ function EstimateDetailModal({
   const lineItems: LineItem[] = Array.isArray(estimate.line_items) ? estimate.line_items : [];
 
   const handleShare = async () => {
-    if (!estimate.pdf_url) {
-      Alert.alert('No PDF', 'Generate a PDF first before sharing.');
+    const url = estimate.contract_url || estimate.pdf_url;
+    if (!url) {
+      Alert.alert('No Document', 'Generate a PDF or contract first before sharing.');
       return;
     }
     try {
       await Share.share({
-        message: `Estimate #${estimateNumber} - ${formatCurrency(estimate.total || 0)}\n${estimate.pdf_url}`,
-        url: estimate.pdf_url,
+        message: `Estimate #${estimateNumber} - ${formatCurrency(estimate.total || 0)}\n${url}`,
+        url,
       });
     } catch {}
   };
@@ -251,8 +259,34 @@ function EstimateDetailModal({
             </View>
           ) : null}
 
+          {/* Contract status */}
+          {estimate.contract_url ? (
+            <View style={[detailStyles.section, { borderLeftWidth: 3, borderLeftColor: Colors.primary }]}>
+              <Text style={detailStyles.sectionTitle}>Contract</Text>
+              <Text style={{ fontSize: Theme.font.size.body, color: Colors.textSecondary }}>
+                Contract generated and ready to share.
+              </Text>
+            </View>
+          ) : null}
+
           {/* Actions */}
           <View style={detailStyles.actions}>
+            <TouchableOpacity
+              style={[detailStyles.actionBtn, { backgroundColor: '#1a5c1a' }]}
+              onPress={() => onGenerateContract(estimate.id)}
+              disabled={generatingContract}
+            >
+              {generatingContract ? (
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                  <ActivityIndicator size="small" color="#fff" />
+                  <Text style={detailStyles.actionBtnPrimaryText}>AI building contract...</Text>
+                </View>
+              ) : (
+                <Text style={detailStyles.actionBtnPrimaryText}>
+                  {estimate.contract_url ? 'Regenerate Contract' : 'Generate Contract'}
+                </Text>
+              )}
+            </TouchableOpacity>
             <TouchableOpacity
               style={[detailStyles.actionBtn, detailStyles.actionBtnPrimary]}
               onPress={() => onGeneratePdf(estimate.id)}
@@ -678,6 +712,7 @@ export default function EstimatesScreen() {
   const [selectedEstimate, setSelectedEstimate] = useState<Estimate | null>(null);
   const [showDetail, setShowDetail] = useState(false);
   const [generatingPdf, setGeneratingPdf] = useState(false);
+  const [generatingContract, setGeneratingContract] = useState(false);
 
   const fetchEstimates = useCallback(async () => {
     if (!company) return;
@@ -736,6 +771,78 @@ export default function EstimatesScreen() {
     }
   };
 
+  const handleGenerateContract = async (id: string) => {
+    const estimate = estimates.find(e => e.id === id);
+    if (!estimate) return;
+
+    if (!isAIConfigured()) {
+      Alert.alert('AI Not Configured', 'Add your OpenRouter API key in settings to generate contracts.');
+      return;
+    }
+
+    setGeneratingContract(true);
+    try {
+      const customerName = estimate.customers?.name || estimate.customer_name || 'Customer';
+      const lineItems: LineItem[] = Array.isArray(estimate.line_items) ? estimate.line_items : [];
+      const lineItemsText = lineItems
+        .map(item => `- ${item.description}: ${item.qty} x $${item.rate.toFixed(2)} = $${item.amount.toFixed(2)}`)
+        .join('\n');
+
+      const contractSections = await aiChat([
+        {
+          role: 'system',
+          content: `You are a contract writer for a professional tree service company called "${company?.name || 'the company'}". Generate a detailed scope of work and work schedule customized to the specific estimate. The other contract sections (payment, liability, etc.) are handled by saved settings. Focus on making the scope and schedule specific to the actual work being done. Return ONLY valid JSON.`,
+        },
+        {
+          role: 'user',
+          content: `Generate the scope of work and schedule for this tree service estimate:
+
+Customer: ${customerName}
+Work items:
+${lineItemsText}
+Total: $${(estimate.total || 0).toFixed(2)}
+Notes: ${estimate.notes || 'None'}
+
+Return JSON with these keys:
+{
+  "scopeOfWork": "Detailed paragraph describing all the work to be performed, referencing each line item specifically. Be thorough about what's included and what's not.",
+  "workSchedule": "Realistic scheduling details for this type of work (e.g., estimated duration, crew size, equipment needed, weather dependencies)",
+  "additionalTerms": "Any additional terms specific to these work items that wouldn't be in standard contract settings (e.g., if there's crane work, hazard trees near structures, etc.). Leave empty string if nothing special."
+}`,
+        },
+      ], { model: 'claude', maxTokens: 800, temperature: 0.4 });
+
+      let sections;
+      try {
+        const match = contractSections.match(/\{[\s\S]*\}/);
+        sections = match ? JSON.parse(match[0]) : null;
+      } catch {
+        sections = null;
+      }
+
+      if (!sections) {
+        Alert.alert('Error', 'AI failed to generate contract content. Please try again.');
+        return;
+      }
+
+      // Send to edge function to render HTML contract
+      const { data, error } = await supabase.functions.invoke('generate-contract', {
+        body: { estimateId: id, sections },
+      });
+
+      if (error) throw error;
+      if (data?.contractUrl) {
+        setEstimates(es => es.map(e => e.id === id ? { ...e, contract_url: data.contractUrl } : e));
+        setSelectedEstimate(e => e?.id === id ? { ...e, contract_url: data.contractUrl } : e);
+        Alert.alert('Contract Generated', 'AI-customized contract is ready to share.');
+      }
+    } catch (err: any) {
+      Alert.alert('Error', err.message || 'Failed to generate contract');
+    } finally {
+      setGeneratingContract(false);
+    }
+  };
+
   const handleEstimateCreated = (estimate: Estimate) => {
     setEstimates(prev => [estimate, ...prev]);
   };
@@ -754,9 +861,18 @@ export default function EstimatesScreen() {
       {/* Header */}
       <View style={styles.header}>
         <Text style={styles.headerTitle}>Estimates</Text>
-        <TouchableOpacity style={styles.addBtn} onPress={() => setShowCreate(true)}>
-          <Text style={styles.addBtnText}>+ New</Text>
-        </TouchableOpacity>
+        <View style={{ flexDirection: 'row', gap: 8 }}>
+          <TouchableOpacity
+            style={[styles.addBtn, { backgroundColor: Colors.surface, borderWidth: 1, borderColor: Colors.border }]}
+            onPress={() => router.push('/(tabs)/contract-settings' as any)}
+            accessibilityLabel="Contract Settings"
+          >
+            <Text style={[styles.addBtnText, { color: Colors.text }]}>Contract</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.addBtn} onPress={() => setShowCreate(true)}>
+            <Text style={styles.addBtnText}>+ New</Text>
+          </TouchableOpacity>
+        </View>
       </View>
 
       {/* Filter bar */}
@@ -835,7 +951,9 @@ export default function EstimatesScreen() {
         }}
         onStatusChange={handleStatusChange}
         onGeneratePdf={handleGeneratePdf}
+        onGenerateContract={handleGenerateContract}
         generatingPdf={generatingPdf}
+        generatingContract={generatingContract}
       />
 
       {/* Create Modal */}
