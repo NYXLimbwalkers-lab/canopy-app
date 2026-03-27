@@ -24,8 +24,6 @@ if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
-type ConversationMode = 'strategy' | 'ads' | 'content' | 'sales' | 'emergency';
-
 interface Message {
   id: string;
   role: 'user' | 'assistant';
@@ -34,6 +32,13 @@ interface Message {
   suggestions?: string[];
   actionType?: 'ad_copy' | 'video_script' | 'lead_scores' | 'review_response' | 'content_calendar' | 'market_strategy';
   actionData?: any;
+}
+
+interface StoredConversation {
+  id: string;
+  messages: Message[];
+  created_at: string;
+  updated_at: string;
 }
 
 interface BusinessSnapshot {
@@ -49,53 +54,7 @@ interface BusinessSnapshot {
   topLeadSource: string | null;
 }
 
-// ─── Mode Configuration ─────────────────────────────────────────────────────
-
-const MODES: Record<ConversationMode, {
-  label: string;
-  icon: string;
-  color: string;
-  description: string;
-  systemAddendum: string;
-}> = {
-  strategy: {
-    label: 'Strategy',
-    icon: '🎯',
-    color: Colors.ai,
-    description: 'Growth planning & business strategy',
-    systemAddendum: 'Focus on overall business growth strategy, market positioning, competitive analysis, and 30/60/90-day plans. Give specific budget allocations and ROI projections.',
-  },
-  ads: {
-    label: 'Ads',
-    icon: '📣',
-    color: '#F59E0B',
-    description: 'Ad campaigns, copy & targeting',
-    systemAddendum: 'Focus exclusively on advertising — Google Ads, LSA, Facebook/Instagram ads, TikTok ads. Give exact copy, targeting settings, budgets, and expected metrics. Reference real CPC and CPL benchmarks for tree service.',
-  },
-  content: {
-    label: 'Content',
-    icon: '🎬',
-    color: '#22C55E',
-    description: 'Social media & video content',
-    systemAddendum: 'Focus on content creation — TikTok, Instagram Reels, YouTube Shorts, Facebook posts. Give exact scripts, hooks, shot lists, posting schedules, and hashtags. Reference what performs well for tree service companies.',
-  },
-  sales: {
-    label: 'Sales',
-    icon: '💰',
-    color: '#3B82F6',
-    description: 'Lead follow-up & closing',
-    systemAddendum: 'Focus on sales processes — speed to lead, follow-up sequences, objection handling, pricing strategies, upselling, and close rate optimization. Give exact scripts and message templates.',
-  },
-  emergency: {
-    label: 'Emergency',
-    icon: '⛈️',
-    color: '#EF4444',
-    description: 'Storm response & urgent marketing',
-    systemAddendum: 'Focus on emergency/storm response marketing — how to capture emergency leads, rapid ad deployment, storm chasing strategy, 24-hour action plans, and capitalizing on weather events. Be urgent and tactical.',
-  },
-};
-
-// ─── Quick Actions per Mode ──────────────────────────────────────────────────
+// ─── Quick Actions (unified — best ~8 from all modes) ───────────────────────
 
 interface QuickAction {
   icon: string;
@@ -105,40 +64,82 @@ interface QuickAction {
   prompt?: string;
 }
 
-const MODE_QUICK_ACTIONS: Record<ConversationMode, QuickAction[]> = {
-  strategy: [
-    { icon: '📊', label: 'Build Market Strategy', type: 'action', actionId: 'market_strategy' },
-    { icon: '📈', label: 'Weekly Game Plan', type: 'chat', prompt: 'Based on everything you can see about my business right now, give me my top 5 priorities for this week ranked by impact. Be brutally honest.' },
-    { icon: '💵', label: 'Double Revenue Plan', type: 'chat', prompt: 'I want to double my revenue in the next 90 days. Based on my current numbers, build me a specific plan with exact budget allocations, campaign types, and weekly milestones.' },
-    { icon: '🏆', label: 'Competitor Analysis', type: 'chat', prompt: 'Analyze the competitive landscape for tree services in my area. What are the top 3 things I should do differently to dominate my market in the next 60 days?' },
-  ],
-  ads: [
-    { icon: '✍️', label: 'Write Ad Copy', type: 'action', actionId: 'ad_copy' },
-    { icon: '🔥', label: 'Audit My Ads', type: 'chat', prompt: 'Look at my current ad campaigns and tell me what\'s working, what\'s not, and exactly what I should change this week to get more leads for less money.' },
-    { icon: '🎯', label: 'Ad Budget Plan', type: 'chat', prompt: 'I have $2,000/month for advertising. Give me the exact breakdown of where every dollar should go — Google Ads, Facebook, TikTok, LSA — with expected leads from each channel.' },
-    { icon: '📞', label: 'Why No Calls?', type: 'chat', prompt: 'I\'m not getting enough phone calls. Based on my current data, diagnose the problem and give me 3 things I can fix TODAY to start getting more calls.' },
-  ],
-  content: [
-    { icon: '🎬', label: 'Draft Video Script', type: 'action', actionId: 'video_script' },
-    { icon: '📅', label: 'Content Calendar', type: 'action', actionId: 'content_calendar' },
-    { icon: '📱', label: 'What to Post Today', type: 'chat', prompt: 'Give me 3 specific video ideas I should film TODAY with exact hooks, scripts, and which platform to post them on. Make them scroll-stoppers for a tree service audience.' },
-    { icon: '⭐', label: 'Review Strategy', type: 'chat', prompt: 'I need more Google reviews fast. Give me a proven system I can start using after every single job this week. Include exact text message templates and timing.' },
-  ],
-  sales: [
-    { icon: '🏷️', label: 'Score My Leads', type: 'action', actionId: 'lead_scores' },
-    { icon: '💬', label: 'Draft Review Response', type: 'action', actionId: 'review_response' },
-    { icon: '📲', label: 'Follow-Up Scripts', type: 'chat', prompt: 'Write me 3 follow-up text message templates: one for new leads (within 5 minutes), one for leads who went cold (3 days), and one for past customers to generate repeat business. Make them personal and effective.' },
-    { icon: '🤝', label: 'Closing Techniques', type: 'chat', prompt: 'What are the top 5 closing techniques for tree service estimates? I\'m losing deals to cheaper competitors. Give me exact scripts to handle price objections.' },
-  ],
-  emergency: [
-    { icon: '⚡', label: 'Storm Ad Blitz', type: 'chat', prompt: 'A big storm is coming to my area. Give me a complete storm response marketing plan — ads to launch, posts to make, follow-up sequences, and how to capture emergency leads before my competitors.' },
-    { icon: '🌪️', label: 'Emergency Response Plan', type: 'chat', prompt: 'Create a detailed 24-hour emergency response action plan. What do I do hour-by-hour when a storm hits? Include pricing strategy, crew deployment, and marketing moves.' },
-    { icon: '📣', label: 'Emergency Ad Copy', type: 'action', actionId: 'emergency_ad_copy' },
-    { icon: '📋', label: 'Damage Assessment Script', type: 'chat', prompt: 'Write me a professional damage assessment script I can use when visiting storm-damaged properties. Include how to present emergency pricing and upsell additional services while being empathetic.' },
-  ],
-};
+const QUICK_ACTIONS: QuickAction[] = [
+  { icon: '📊', label: 'Build Market Strategy', type: 'action', actionId: 'market_strategy' },
+  { icon: '✍️', label: 'Write Ad Copy', type: 'action', actionId: 'ad_copy' },
+  { icon: '🎬', label: 'Draft Video Script', type: 'action', actionId: 'video_script' },
+  { icon: '📅', label: 'Content Calendar', type: 'action', actionId: 'content_calendar' },
+  { icon: '🏷️', label: 'Score My Leads', type: 'action', actionId: 'lead_scores' },
+  { icon: '💬', label: 'Draft Review Response', type: 'action', actionId: 'review_response' },
+  { icon: '📈', label: 'Weekly Game Plan', type: 'chat', prompt: 'Based on everything you can see about my business right now, give me my top 5 priorities for this week ranked by impact. Be brutally honest.' },
+  { icon: '⚡', label: 'Storm Ad Blitz', type: 'chat', prompt: 'A big storm is coming to my area. Give me a complete storm response marketing plan — ads to launch, posts to make, follow-up sequences, and how to capture emergency leads before my competitors.' },
+];
 
-// ─── System Prompt Builder ───────────────────────────────────────────────────
+// ─── Voice Input Hook (Web Speech API) ──────────────────────────────────────
+
+function useVoiceInput() {
+  const [isListening, setIsListening] = useState(false);
+  const [transcript, setTranscript] = useState('');
+  const recognitionRef = useRef<any>(null);
+
+  const startListening = useCallback(() => {
+    if (Platform.OS !== 'web') {
+      Alert.alert('Voice Input', 'Voice input is available on the web version.');
+      return;
+    }
+
+    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    if (!SpeechRecognition) {
+      Alert.alert('Not Supported', 'Speech recognition is not supported in this browser. Try Chrome.');
+      return;
+    }
+
+    const recognition = new SpeechRecognition();
+    recognition.continuous = true;
+    recognition.interimResults = true;
+    recognition.lang = 'en-US';
+
+    let finalTranscript = '';
+
+    recognition.onresult = (event: any) => {
+      let interim = '';
+      for (let i = event.resultIndex; i < event.results.length; i++) {
+        if (event.results[i].isFinal) {
+          finalTranscript += event.results[i][0].transcript + ' ';
+        } else {
+          interim += event.results[i][0].transcript;
+        }
+      }
+      setTranscript(finalTranscript + interim);
+    };
+
+    recognition.onerror = (event: any) => {
+      console.error('Speech recognition error:', event.error);
+      setIsListening(false);
+    };
+
+    recognition.onend = () => {
+      setIsListening(false);
+    };
+
+    recognitionRef.current = recognition;
+    recognition.start();
+    setIsListening(true);
+    setTranscript('');
+  }, []);
+
+  const stopListening = useCallback(() => {
+    if (recognitionRef.current) {
+      recognitionRef.current.stop();
+      recognitionRef.current = null;
+    }
+    setIsListening(false);
+  }, []);
+
+  return { isListening, transcript, startListening, stopListening, setTranscript };
+}
+
+// ─── Unified System Prompt Builder ──────────────────────────────────────────
 
 const buildSystemPrompt = (
   companyName: string,
@@ -148,21 +149,42 @@ const buildSystemPrompt = (
   radius: number,
   snapshot: BusinessSnapshot | null,
   ownerName: string,
-  mode: ConversationMode,
+  recentContextSummary?: string,
 ) => `You are the Chief Growth Officer at Canopy — a world-class marketing and advertising agency that has scaled over 500 home service companies from $0 to $10M+ in annual revenue. You specialize in tree service, landscaping, and outdoor service companies.
 
 Your name is Canopy AI. You speak directly to ${ownerName}, the owner of ${companyName} in ${city}, ${state}.
 
-EXPERTISE:
-- Google Ads (Search, LSA, Performance Max) for tree service — you know exact CPCs, conversion rates, and budget allocations
-- Facebook/Instagram lead generation ads — you know the creative formulas that work for tree service
-- TikTok organic & paid — you know which video formats go viral for tree crews
-- SEO & Google Business Profile optimization — you know every ranking factor
-- Sales follow-up systems — speed-to-lead, SMS/call cadences, close rates
-- Reputation management — review generation, response strategies
-- Content marketing — what to post, when, and why
+EXPERTISE — you are an expert in ALL of these areas simultaneously:
+
+STRATEGY & GROWTH:
+- Overall business growth strategy, market positioning, competitive analysis, 30/60/90-day plans
+- Specific budget allocations and ROI projections
 - Seasonal strategy — storm chasing, spring/fall campaigns, slow season pivots
 - Pricing & packaging — how to increase average ticket size
+
+ADVERTISING:
+- Google Ads (Search, LSA, Performance Max) for tree service — exact CPCs, conversion rates, budget allocations
+- Facebook/Instagram lead generation ads — creative formulas that work for tree service
+- TikTok organic & paid — video formats that go viral for tree crews
+- Ad copy, targeting settings, budgets, and expected metrics with real CPC and CPL benchmarks
+
+CONTENT & SOCIAL MEDIA:
+- TikTok, Instagram Reels, YouTube Shorts, Facebook posts
+- Exact scripts, hooks, shot lists, posting schedules, and hashtags
+- What performs well for tree service companies specifically
+
+SALES & LEAD MANAGEMENT:
+- Speed to lead, follow-up sequences, objection handling, pricing strategies
+- Upselling, close rate optimization
+- Exact scripts and message templates for every scenario
+
+EMERGENCY & STORM RESPONSE:
+- Emergency/storm response marketing — capturing emergency leads, rapid ad deployment
+- Storm chasing strategy, 24-hour action plans, capitalizing on weather events
+
+REPUTATION & SEO:
+- SEO & Google Business Profile optimization — every ranking factor
+- Review generation, response strategies, reputation management
 
 COMPANY CONTEXT:
 - Company: ${companyName}
@@ -180,10 +202,10 @@ LIVE BUSINESS DATA (use this to give specific advice):
 - Revenue this week: $${snapshot.weekRevenue.toFixed(0)}
 - Top lead source: ${snapshot.topLeadSource ?? 'N/A'}
 ` : ''}
-
-CURRENT MODE: ${MODES[mode].label.toUpperCase()}
-${MODES[mode].systemAddendum}
-
+${recentContextSummary ? `
+RECENT CONVERSATION CONTEXT (from the past 10 days):
+${recentContextSummary}
+` : ''}
 RULES:
 1. Be direct, specific, and actionable. No fluff. Every answer should include a concrete next step.
 2. Reference their actual data when giving advice. Don't be generic.
@@ -447,6 +469,32 @@ function MarketStrategyCard({ data }: { data: string[] }) {
   );
 }
 
+// ─── Day Separator Component ─────────────────────────────────────────────────
+
+function DaySeparator({ date }: { date: string }) {
+  const d = new Date(date);
+  const today = new Date();
+  const yesterday = new Date();
+  yesterday.setDate(yesterday.getDate() - 1);
+
+  let label: string;
+  if (d.toDateString() === today.toDateString()) {
+    label = 'Today';
+  } else if (d.toDateString() === yesterday.toDateString()) {
+    label = 'Yesterday';
+  } else {
+    label = d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+  }
+
+  return (
+    <View style={styles.daySeparator}>
+      <View style={styles.daySeparatorLine} />
+      <Text style={styles.daySeparatorText}>{label}</Text>
+      <View style={styles.daySeparatorLine} />
+    </View>
+  );
+}
+
 // ─── Main Component ──────────────────────────────────────────────────────────
 
 export default function AIExpertScreen() {
@@ -454,12 +502,21 @@ export default function AIExpertScreen() {
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
   const [snapshot, setSnapshot] = useState<BusinessSnapshot | null>(null);
-  const [mode, setMode] = useState<ConversationMode>('strategy');
   const [contextExpanded, setContextExpanded] = useState(false);
   const [conversationId, setConversationId] = useState<string | null>(null);
+  const [recentContext, setRecentContext] = useState<string>('');
+  const [actionsCollapsed, setActionsCollapsed] = useState(false);
   const scrollRef = useRef<ScrollView>(null);
   const { company, profile } = useAuthStore();
   const fadeAnim = useRef(new Animated.Value(0)).current;
+  const { isListening, transcript, startListening, stopListening, setTranscript } = useVoiceInput();
+
+  // When transcript changes, append to input
+  useEffect(() => {
+    if (transcript) {
+      setInput(transcript);
+    }
+  }, [transcript]);
 
   // Entrance animation
   useEffect(() => {
@@ -517,40 +574,99 @@ export default function AIExpertScreen() {
 
   useEffect(() => { fetchSnapshot(); }, [fetchSnapshot]);
 
-  // ─── Chat History Persistence ────────────────────────────────────────
+  // ─── 10-Day Conversation Memory ────────────────────────────────────────
 
-  const loadLatestConversation = useCallback(async () => {
+  const loadConversationHistory = useCallback(async () => {
     if (!company) return;
     try {
+      // Load conversations from last 10 days
+      const tenDaysAgo = new Date();
+      tenDaysAgo.setDate(tenDaysAgo.getDate() - 10);
+
       const { data } = await supabase
         .from('ai_conversations')
-        .select('id, messages, mode')
+        .select('id, messages, created_at, updated_at')
         .eq('company_id', company.id)
-        .order('created_at', { ascending: false })
-        .limit(1)
-        .single();
+        .gte('updated_at', tenDaysAgo.toISOString())
+        .order('updated_at', { ascending: false });
 
-      if (data && data.messages && Array.isArray(data.messages) && data.messages.length > 0) {
-        setConversationId(data.id);
-        setMessages(data.messages as Message[]);
-        if (data.mode && MODES[data.mode as ConversationMode]) {
-          setMode(data.mode as ConversationMode);
+      if (!data || data.length === 0) return;
+
+      // Collect all messages from all conversations, sorted by timestamp
+      const allMessages: (Message & { conversationDate: string })[] = [];
+      const seenIds = new Set<string>();
+
+      for (const convo of data) {
+        if (!convo.messages || !Array.isArray(convo.messages)) continue;
+        for (const msg of convo.messages as Message[]) {
+          if (msg.id && !seenIds.has(msg.id)) {
+            seenIds.add(msg.id);
+            allMessages.push({
+              ...msg,
+              conversationDate: convo.updated_at || convo.created_at,
+            });
+          }
         }
       }
+
+      // Sort by timestamp
+      allMessages.sort((a, b) => a.timestamp - b.timestamp);
+
+      // Load the most recent conversation as the active chat
+      const latestConvo = data[0];
+      if (latestConvo && latestConvo.messages && Array.isArray(latestConvo.messages) && latestConvo.messages.length > 0) {
+        // Check if it was updated today — if so, continue it
+        const latestDate = new Date(latestConvo.updated_at);
+        const today = new Date();
+        const isToday = latestDate.toDateString() === today.toDateString();
+
+        if (isToday) {
+          setConversationId(latestConvo.id);
+          setMessages(latestConvo.messages as Message[]);
+        }
+      }
+
+      // Build a context summary from the last ~20 messages across all conversations
+      const contextMessages = allMessages.slice(-20);
+      if (contextMessages.length > 0) {
+        const summary = contextMessages
+          .map(m => `[${m.role === 'user' ? 'User' : 'AI'}]: ${m.content.slice(0, 200)}${m.content.length > 200 ? '...' : ''}`)
+          .join('\n');
+        setRecentContext(summary);
+      }
+
+      // Auto-prune conversations older than 10 days
+      pruneOldConversations();
     } catch {
       // No previous conversation — start fresh
     }
   }, [company]);
 
-  useEffect(() => { loadLatestConversation(); }, [loadLatestConversation]);
+  const pruneOldConversations = useCallback(async () => {
+    if (!company) return;
+    try {
+      const tenDaysAgo = new Date();
+      tenDaysAgo.setDate(tenDaysAgo.getDate() - 10);
 
-  const saveConversation = useCallback(async (msgs: Message[], currentMode: ConversationMode) => {
+      await supabase
+        .from('ai_conversations')
+        .delete()
+        .eq('company_id', company.id)
+        .lt('updated_at', tenDaysAgo.toISOString());
+    } catch {
+      // Silent — cleanup is best-effort
+    }
+  }, [company]);
+
+  useEffect(() => { loadConversationHistory(); }, [loadConversationHistory]);
+
+  const saveConversation = useCallback(async (msgs: Message[]) => {
     if (!company || msgs.length === 0) return;
     try {
       if (conversationId) {
         await supabase
           .from('ai_conversations')
-          .update({ messages: msgs as any, mode: currentMode, updated_at: new Date().toISOString() })
+          .update({ messages: msgs as any, mode: 'unified', updated_at: new Date().toISOString() })
           .eq('id', conversationId);
       } else {
         const { data } = await supabase
@@ -558,7 +674,7 @@ export default function AIExpertScreen() {
           .insert({
             company_id: company.id,
             messages: msgs as any,
-            mode: currentMode,
+            mode: 'unified',
             created_at: new Date().toISOString(),
             updated_at: new Date().toISOString(),
           })
@@ -596,7 +712,7 @@ export default function AIExpertScreen() {
     }
   };
 
-  // ─── System Prompt ────────────────────────────────────────────────────
+  // ─── Unified System Prompt ─────────────────────────────────────────────
 
   const getSystemPrompt = useCallback(() => {
     return buildSystemPrompt(
@@ -607,9 +723,21 @@ export default function AIExpertScreen() {
       company?.service_radius_miles ?? 25,
       snapshot,
       profile?.name?.split(' ')[0] ?? 'Boss',
-      mode,
+      recentContext || undefined,
     );
-  }, [company, snapshot, profile, mode]);
+  }, [company, snapshot, profile, recentContext]);
+
+  // ─── Build AI Messages with Context ────────────────────────────────────
+
+  const buildAIMessages = useCallback((currentMessages: Message[]) => {
+    // Use last ~20 messages from current conversation as direct history
+    const recentMsgs = currentMessages.slice(-20);
+    const history = recentMsgs.map(m => ({
+      role: m.role as 'user' | 'assistant',
+      content: m.content,
+    }));
+    return [{ role: 'system' as const, content: getSystemPrompt() }, ...history];
+  }, [getSystemPrompt]);
 
   // ─── Quick Action Handlers ─────────────────────────────────────────────
 
@@ -617,7 +745,7 @@ export default function AIExpertScreen() {
 
   const handleActionAdCopy = async () => {
     if (!isAIConfigured()) {
-      setMessages(prev => [...prev, { id: generateId(), role: 'assistant', content: `⚠️ AI is not configured yet. Go to **Settings → AI Configuration** and enter your OpenRouter API key. Get one free at openrouter.ai`, timestamp: Date.now() }]);
+      setMessages(prev => [...prev, { id: generateId(), role: 'assistant', content: 'AI is not configured yet. Go to Settings and enter your OpenRouter API key. Get one free at openrouter.ai', timestamp: Date.now() }]);
       return;
     }
     setLoading(true);
@@ -661,7 +789,7 @@ export default function AIExpertScreen() {
 
       setMessages(prev => {
         const newMsgs = [...prev, aiMsg];
-        saveConversation(newMsgs, mode);
+        saveConversation(newMsgs);
         return newMsgs;
       });
     } catch (e: any) {
@@ -683,7 +811,7 @@ export default function AIExpertScreen() {
       const errMsg: Message = {
         id: generateId(),
         role: 'assistant',
-        content: `⚠️ AI is not configured yet. Go to **Settings → AI Configuration** and enter your OpenRouter API key. You can get one free at openrouter.ai`,
+        content: 'AI is not configured yet. Go to Settings and enter your OpenRouter API key. You can get one free at openrouter.ai',
         timestamp: Date.now(),
       };
       setMessages(prev => [...prev, errMsg]);
@@ -724,14 +852,14 @@ export default function AIExpertScreen() {
 
       setMessages(prev => {
         const newMsgs = [...prev, aiMsg];
-        saveConversation(newMsgs, mode);
+        saveConversation(newMsgs);
         return newMsgs;
       });
     } catch (e: any) {
       const errMsg: Message = {
         id: generateId(),
         role: 'assistant',
-        content: `⚠️ Error generating video script: ${e.message}\n\nMake sure your OpenRouter API key is valid in Settings → AI Configuration.`,
+        content: `Error generating video script: ${e.message}\n\nMake sure your OpenRouter API key is valid in Settings.`,
         timestamp: Date.now(),
       };
       setMessages(prev => [...prev, errMsg]);
@@ -809,7 +937,7 @@ export default function AIExpertScreen() {
 
       setMessages(prev => {
         const newMsgs = [...prev, aiMsg];
-        saveConversation(newMsgs, mode);
+        saveConversation(newMsgs);
         return newMsgs;
       });
     } catch (e: any) {
@@ -893,7 +1021,7 @@ export default function AIExpertScreen() {
 
       setMessages(prev => {
         const newMsgs = [...prev, aiMsg];
-        saveConversation(newMsgs, mode);
+        saveConversation(newMsgs);
         return newMsgs;
       });
     } catch (e: any) {
@@ -912,7 +1040,7 @@ export default function AIExpertScreen() {
 
   const handleActionContentCalendar = async () => {
     if (!isAIConfigured()) {
-      setMessages(prev => [...prev, { id: generateId(), role: 'assistant', content: `⚠️ AI is not configured yet. Go to **Settings → AI Configuration** and enter your OpenRouter API key. Get one free at openrouter.ai`, timestamp: Date.now() }]);
+      setMessages(prev => [...prev, { id: generateId(), role: 'assistant', content: 'AI is not configured yet. Go to Settings and enter your OpenRouter API key. Get one free at openrouter.ai', timestamp: Date.now() }]);
       return;
     }
     setLoading(true);
@@ -947,7 +1075,7 @@ export default function AIExpertScreen() {
 
       setMessages(prev => {
         const newMsgs = [...prev, aiMsg];
-        saveConversation(newMsgs, mode);
+        saveConversation(newMsgs);
         return newMsgs;
       });
     } catch (e: any) {
@@ -966,7 +1094,7 @@ export default function AIExpertScreen() {
 
   const handleActionMarketStrategy = async () => {
     if (!isAIConfigured()) {
-      setMessages(prev => [...prev, { id: generateId(), role: 'assistant', content: `⚠️ AI is not configured yet. Go to **Settings → AI Configuration** and enter your OpenRouter API key. Get one free at openrouter.ai`, timestamp: Date.now() }]);
+      setMessages(prev => [...prev, { id: generateId(), role: 'assistant', content: 'AI is not configured yet. Go to Settings and enter your OpenRouter API key. Get one free at openrouter.ai', timestamp: Date.now() }]);
       return;
     }
     setLoading(true);
@@ -999,7 +1127,7 @@ export default function AIExpertScreen() {
 
       setMessages(prev => {
         const newMsgs = [...prev, aiMsg];
-        saveConversation(newMsgs, mode);
+        saveConversation(newMsgs);
         return newMsgs;
       });
     } catch (e: any) {
@@ -1051,6 +1179,10 @@ export default function AIExpertScreen() {
     const msg = (text ?? input).trim();
     if (!msg || loading) return;
 
+    // Stop voice if listening
+    if (isListening) stopListening();
+    setTranscript('');
+
     if (!isAIConfigured()) {
       const errMsgs: Message[] = [
         { id: generateId(), role: 'user', content: msg, timestamp: Date.now() },
@@ -1068,12 +1200,9 @@ export default function AIExpertScreen() {
     setLoading(true);
 
     try {
-      const history = updatedMessages.map(m => ({
-        role: m.role as 'user' | 'assistant',
-        content: m.content,
-      }));
+      const aiMessages = buildAIMessages(updatedMessages);
       const reply = await aiChat(
-        [{ role: 'system', content: getSystemPrompt() }, ...history],
+        aiMessages,
         { model: 'claude', maxTokens: 1500, temperature: 0.7 }
       );
 
@@ -1089,7 +1218,7 @@ export default function AIExpertScreen() {
 
       const finalMessages = [...updatedMessages, aiMsg];
       setMessages(finalMessages);
-      saveConversation(finalMessages, mode);
+      saveConversation(finalMessages);
     } catch (e: any) {
       const errMsg: Message = {
         id: generateId(),
@@ -1140,6 +1269,13 @@ export default function AIExpertScreen() {
     setContextExpanded(!contextExpanded);
   };
 
+  // ─── Toggle Actions Panel ──────────────────────────────────────────────
+
+  const toggleActions = () => {
+    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+    setActionsCollapsed(!actionsCollapsed);
+  };
+
   // ─── Render Action Data ────────────────────────────────────────────────
 
   const renderActionData = (msg: Message) => {
@@ -1163,14 +1299,31 @@ export default function AIExpertScreen() {
     }
   };
 
-  // ─── Render ────────────────────────────────────────────────────────────
+  // ─── Group Messages by Day ─────────────────────────────────────────────
 
-  const currentMode = MODES[mode];
+  const getMessageGroups = () => {
+    const groups: { date: string; messages: Message[] }[] = [];
+    let currentDate = '';
+
+    for (const msg of messages) {
+      const msgDate = new Date(msg.timestamp).toDateString();
+      if (msgDate !== currentDate) {
+        currentDate = msgDate;
+        groups.push({ date: new Date(msg.timestamp).toISOString(), messages: [msg] });
+      } else {
+        groups[groups.length - 1].messages.push(msg);
+      }
+    }
+
+    return groups;
+  };
+
+  // ─── Render ────────────────────────────────────────────────────────────
 
   return (
     <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
       <Animated.View style={[styles.flex, { opacity: fadeAnim }]}>
-        {/* Purple Gradient Header */}
+        {/* Header */}
         <LinearGradient
           colors={['#7C3AED', '#6D28D9', '#5B21B6']}
           start={{ x: 0, y: 0 }}
@@ -1185,7 +1338,7 @@ export default function AIExpertScreen() {
               <View>
                 <Text style={styles.headerTitle}>Canopy AI</Text>
                 <Text style={styles.headerSub}>
-                  {currentMode.icon} {currentMode.label} Mode
+                  Your Growth Expert
                 </Text>
               </View>
             </View>
@@ -1195,31 +1348,6 @@ export default function AIExpertScreen() {
               </TouchableOpacity>
             )}
           </View>
-
-          {/* Mode Selector */}
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={styles.modeRow}
-          >
-            {(Object.keys(MODES) as ConversationMode[]).map(m => {
-              const modeConfig = MODES[m];
-              const isActive = mode === m;
-              return (
-                <TouchableOpacity
-                  key={m}
-                  style={[styles.modeChip, isActive && styles.modeChipActive]}
-                  onPress={() => setMode(m)}
-                  activeOpacity={0.7}
-                >
-                  <Text style={styles.modeChipIcon}>{modeConfig.icon}</Text>
-                  <Text style={[styles.modeChipText, isActive && styles.modeChipTextActive]}>
-                    {modeConfig.label}
-                  </Text>
-                </TouchableOpacity>
-              );
-            })}
-          </ScrollView>
         </LinearGradient>
 
         {/* Context Panel */}
@@ -1312,16 +1440,16 @@ export default function AIExpertScreen() {
                   Hey {profile?.name?.split(' ')[0] ?? 'there'}
                 </Text>
                 <Text style={styles.welcomeSubtitle}>
-                  {currentMode.description}. Ask me anything or use a quick action below.
+                  I'm your all-in-one growth expert — strategy, ads, content, sales, and emergency response. Ask me anything or use a quick action below.
                 </Text>
               </View>
 
-              {/* Quick Actions for Current Mode */}
+              {/* Quick Actions */}
               <Text style={styles.quickTitle}>
-                {currentMode.icon} {currentMode.label} Actions
+                Quick Actions
               </Text>
               <View style={styles.quickGrid}>
-                {MODE_QUICK_ACTIONS[mode].map(action => (
+                {QUICK_ACTIONS.map(action => (
                   <TouchableOpacity
                     key={action.label}
                     style={[
@@ -1344,43 +1472,77 @@ export default function AIExpertScreen() {
             </View>
           ) : (
             <>
-              {messages.map((msg) => (
-                <TouchableOpacity
-                  key={msg.id}
-                  activeOpacity={0.8}
-                  onLongPress={() => handleMessagePress(msg)}
-                  onPress={() => msg.role === 'assistant' ? handleMessagePress(msg) : undefined}
+              {/* Collapsible quick actions when chat has messages */}
+              <TouchableOpacity onPress={toggleActions} style={styles.actionsToggle} activeOpacity={0.7}>
+                <Text style={styles.actionsToggleText}>
+                  {actionsCollapsed ? 'Show Quick Actions ▼' : 'Hide Quick Actions ▲'}
+                </Text>
+              </TouchableOpacity>
+
+              {!actionsCollapsed && (
+                <ScrollView
+                  horizontal
+                  showsHorizontalScrollIndicator={false}
+                  contentContainerStyle={styles.actionsScrollRow}
+                  style={styles.actionsScroll}
                 >
-                  <View style={[styles.bubble, msg.role === 'user' ? styles.userBubble : styles.aiBubble]}>
-                    {msg.role === 'assistant' && (
-                      <View style={styles.aiBubbleAvatar}>
-                        <Text style={{ fontSize: 14 }}>🧠</Text>
+                  {QUICK_ACTIONS.map(action => (
+                    <TouchableOpacity
+                      key={action.label}
+                      style={styles.quickChip}
+                      onPress={() => handleQuickAction(action)}
+                      activeOpacity={0.7}
+                    >
+                      <Text style={styles.quickChipEmoji}>{action.icon}</Text>
+                      <Text style={styles.quickChipLabel}>{action.label}</Text>
+                    </TouchableOpacity>
+                  ))}
+                </ScrollView>
+              )}
+
+              {/* Messages grouped by day */}
+              {getMessageGroups().map((group, gi) => (
+                <View key={gi}>
+                  <DaySeparator date={group.date} />
+                  {group.messages.map((msg) => (
+                    <TouchableOpacity
+                      key={msg.id}
+                      activeOpacity={0.8}
+                      onLongPress={() => handleMessagePress(msg)}
+                      onPress={() => msg.role === 'assistant' ? handleMessagePress(msg) : undefined}
+                    >
+                      <View style={[styles.bubble, msg.role === 'user' ? styles.userBubble : styles.aiBubble]}>
+                        {msg.role === 'assistant' && (
+                          <View style={styles.aiBubbleAvatar}>
+                            <Text style={{ fontSize: 14 }}>🧠</Text>
+                          </View>
+                        )}
+                        <Text style={[styles.bubbleText, msg.role === 'user' ? styles.userBubbleText : styles.aiBubbleText]}>
+                          {msg.content}
+                        </Text>
                       </View>
-                    )}
-                    <Text style={[styles.bubbleText, msg.role === 'user' ? styles.userBubbleText : styles.aiBubbleText]}>
-                      {msg.content}
-                    </Text>
-                  </View>
 
-                  {/* Inline Action Data Cards */}
-                  {renderActionData(msg)}
+                      {/* Inline Action Data Cards */}
+                      {renderActionData(msg)}
 
-                  {/* Smart Suggestions */}
-                  {msg.suggestions && msg.suggestions.length > 0 && (
-                    <View style={styles.suggestionsRow}>
-                      {msg.suggestions.map((suggestion, si) => (
-                        <TouchableOpacity
-                          key={si}
-                          style={styles.suggestionChip}
-                          onPress={() => send(suggestion)}
-                          activeOpacity={0.7}
-                        >
-                          <Text style={styles.suggestionText}>{suggestion}</Text>
-                        </TouchableOpacity>
-                      ))}
-                    </View>
-                  )}
-                </TouchableOpacity>
+                      {/* Smart Suggestions */}
+                      {msg.suggestions && msg.suggestions.length > 0 && (
+                        <View style={styles.suggestionsRow}>
+                          {msg.suggestions.map((suggestion, si) => (
+                            <TouchableOpacity
+                              key={si}
+                              style={styles.suggestionChip}
+                              onPress={() => send(suggestion)}
+                              activeOpacity={0.7}
+                            >
+                              <Text style={styles.suggestionText}>{suggestion}</Text>
+                            </TouchableOpacity>
+                          ))}
+                        </View>
+                      )}
+                    </TouchableOpacity>
+                  ))}
+                </View>
               ))}
 
               {loading && <TypingIndicator />}
@@ -1390,11 +1552,18 @@ export default function AIExpertScreen() {
 
         {/* Input */}
         <View style={styles.inputRow}>
+          <TouchableOpacity
+            style={[styles.micBtn, isListening && styles.micBtnActive]}
+            onPress={isListening ? stopListening : startListening}
+            activeOpacity={0.7}
+          >
+            <Text style={styles.micBtnText}>{isListening ? '🔴' : '🎙️'}</Text>
+          </TouchableOpacity>
           <TextInput
             style={styles.input}
             value={input}
             onChangeText={setInput}
-            placeholder={`Ask about ${currentMode.label.toLowerCase()}...`}
+            placeholder={isListening ? 'Listening...' : 'Ask anything about growing your business...'}
             placeholderTextColor={Colors.textTertiary}
             multiline
             onSubmitEditing={() => send()}
@@ -1424,13 +1593,12 @@ const styles = StyleSheet.create({
   header: {
     paddingHorizontal: 20,
     paddingTop: 56,
-    paddingBottom: 12,
+    paddingBottom: 16,
   },
   headerTop: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 14,
   },
   headerLeft: { flexDirection: 'row', alignItems: 'center', gap: 12 },
   aiAvatar: {
@@ -1459,38 +1627,6 @@ const styles = StyleSheet.create({
   },
   clearBtnText: { fontSize: Theme.font.size.small, color: '#FFFFFF', fontWeight: Theme.font.weight.medium },
 
-  // Mode selector
-  modeRow: {
-    flexDirection: 'row',
-    gap: 8,
-    paddingBottom: 4,
-  },
-  modeChip: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-    borderRadius: Theme.radius.full,
-    backgroundColor: 'rgba(255,255,255,0.1)',
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.15)',
-  },
-  modeChipActive: {
-    backgroundColor: 'rgba(255,255,255,0.25)',
-    borderColor: 'rgba(255,255,255,0.5)',
-  },
-  modeChipIcon: { fontSize: 14 },
-  modeChipText: {
-    fontSize: Theme.font.size.small,
-    color: 'rgba(255,255,255,0.7)',
-    fontWeight: Theme.font.weight.medium,
-  },
-  modeChipTextActive: {
-    color: '#FFFFFF',
-    fontWeight: Theme.font.weight.semibold,
-  },
-
   // Context Panel
   contextBar: {
     backgroundColor: Colors.surface,
@@ -1507,7 +1643,7 @@ const styles = StyleSheet.create({
   contextBarTitle: {
     fontSize: Theme.font.size.small,
     fontWeight: Theme.font.weight.semibold,
-    color: Colors.aiLight,
+    color: Colors.ai,
   },
   contextBarToggle: {
     fontSize: 10,
@@ -1560,6 +1696,61 @@ const styles = StyleSheet.create({
     fontStyle: 'italic',
   },
 
+  // Day separator
+  daySeparator: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    marginVertical: 16,
+  },
+  daySeparatorLine: {
+    flex: 1,
+    height: 1,
+    backgroundColor: Colors.border,
+  },
+  daySeparatorText: {
+    fontSize: Theme.font.size.caption,
+    color: Colors.textTertiary,
+    fontWeight: Theme.font.weight.medium,
+  },
+
+  // Actions toggle
+  actionsToggle: {
+    alignSelf: 'center',
+    paddingVertical: 6,
+    paddingHorizontal: 14,
+    marginBottom: 8,
+  },
+  actionsToggleText: {
+    fontSize: Theme.font.size.caption,
+    color: Colors.ai,
+    fontWeight: Theme.font.weight.medium,
+  },
+  actionsScroll: {
+    marginBottom: 12,
+  },
+  actionsScrollRow: {
+    gap: 8,
+    paddingHorizontal: 4,
+  },
+  quickChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: Colors.surface,
+    borderRadius: Theme.radius.full,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderWidth: 1,
+    borderColor: Colors.border,
+  },
+  quickChipEmoji: { fontSize: 14 },
+  quickChipLabel: {
+    fontSize: Theme.font.size.small,
+    color: Colors.text,
+    fontWeight: Theme.font.weight.medium,
+  },
+
   // Messages area
   messages: { flex: 1 },
   messagesContent: { padding: 16, paddingBottom: 24 },
@@ -1602,7 +1793,7 @@ const styles = StyleSheet.create({
   quickCardAction: {
     borderColor: Colors.ai,
     borderWidth: 1.5,
-    backgroundColor: 'rgba(124, 58, 237, 0.06)',
+    backgroundColor: Colors.aiBg,
   },
   quickCardEmoji: { fontSize: 24 },
   quickCardBody: { flex: 1, gap: 2 },
@@ -1613,7 +1804,7 @@ const styles = StyleSheet.create({
   },
   quickCardBadge: {
     fontSize: Theme.font.size.caption,
-    color: Colors.aiLight,
+    color: Colors.ai,
     fontWeight: Theme.font.weight.medium,
   },
 
@@ -1645,7 +1836,7 @@ const styles = StyleSheet.create({
     width: 28,
     height: 28,
     borderRadius: 14,
-    backgroundColor: 'rgba(124, 58, 237, 0.2)',
+    backgroundColor: Colors.aiBg,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -1700,7 +1891,7 @@ const styles = StyleSheet.create({
   },
   suggestionText: {
     fontSize: Theme.font.size.small,
-    color: Colors.aiLight,
+    color: Colors.ai,
     fontWeight: Theme.font.weight.medium,
   },
 
@@ -1740,7 +1931,7 @@ const styles = StyleSheet.create({
   },
   adVariantLabel: {
     fontSize: Theme.font.size.caption,
-    color: Colors.aiLight,
+    color: Colors.ai,
     fontWeight: Theme.font.weight.semibold,
     marginBottom: 6,
     textTransform: 'uppercase',
@@ -1793,7 +1984,7 @@ const styles = StyleSheet.create({
   },
   scriptLabel: {
     fontSize: Theme.font.size.caption,
-    color: Colors.aiLight,
+    color: Colors.ai,
     fontWeight: Theme.font.weight.semibold,
     textTransform: 'uppercase',
     letterSpacing: 0.5,
@@ -1830,7 +2021,7 @@ const styles = StyleSheet.create({
   },
   hashtagText: {
     fontSize: Theme.font.size.caption,
-    color: Colors.aiLight,
+    color: Colors.ai,
   },
   fullCopyBtn: {
     backgroundColor: Colors.ai,
@@ -1886,7 +2077,7 @@ const styles = StyleSheet.create({
   },
   followUpLabel: {
     fontSize: Theme.font.size.caption,
-    color: Colors.aiLight,
+    color: Colors.ai,
     fontWeight: Theme.font.weight.semibold,
   },
   followUpText: {
@@ -1919,7 +2110,7 @@ const styles = StyleSheet.create({
   },
   reviewResponseLabel: {
     fontSize: Theme.font.size.caption,
-    color: Colors.aiLight,
+    color: Colors.ai,
     fontWeight: Theme.font.weight.semibold,
     marginBottom: 6,
     textTransform: 'uppercase',
@@ -2003,6 +2194,23 @@ const styles = StyleSheet.create({
     borderTopColor: Colors.border,
     backgroundColor: Colors.surface,
     alignItems: 'flex-end',
+  },
+  micBtn: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: Colors.surfaceSecondary,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: Colors.border,
+  },
+  micBtnActive: {
+    backgroundColor: Colors.dangerBg,
+    borderColor: Colors.danger,
+  },
+  micBtnText: {
+    fontSize: 20,
   },
   input: {
     flex: 1,
