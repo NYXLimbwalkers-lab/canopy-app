@@ -37,7 +37,7 @@ export default function LoginScreen() {
     if (forgotMode) {
       setIsResetting(true);
       const { error } = await supabase.auth.resetPasswordForEmail(email.trim().toLowerCase(), {
-        redirectTo: 'https://canopy-app-three.vercel.app/reset-password',
+        redirectTo: `${process.env.EXPO_PUBLIC_APP_URL || 'https://canopy-app-three.vercel.app'}/reset-password`,
       });
       setIsResetting(false);
       if (error) setSubmitError(error.message);

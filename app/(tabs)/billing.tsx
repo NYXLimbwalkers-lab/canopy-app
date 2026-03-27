@@ -16,7 +16,7 @@ export default function BillingScreen() {
   const currentPlan = company?.plan ?? 'trial';
   const isActive = ['pro', 'active', 'trialing'].includes(currentPlan);
   const trialDays = trialDaysRemaining(company?.trial_ends_at);
-  const isTrialing = currentPlan === 'trial';
+  const isTrialing = currentPlan === 'trial' || currentPlan === 'trialing';
 
   const handleSubscribe = async () => {
     if (!company?.id || !profile?.email) {

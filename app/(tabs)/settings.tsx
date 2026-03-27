@@ -216,9 +216,9 @@ export default function SettingsScreen() {
             phone: phone.trim(),
             website: website.trim(),
             city: city.trim(),
-            state: state.trim().toUpperCase().slice(0, 2),
+            state: state.trim().toUpperCase().slice(0, 2) || null,
             services_offered: servicesArray.length > 0 ? servicesArray : null,
-            service_radius_miles: serviceRadius ? Number(serviceRadius) : null,
+            service_radius_miles: serviceRadius ? Math.min(Math.max(Number(serviceRadius), 1), 500) : null,
           })
           .eq('id', company.id);
 

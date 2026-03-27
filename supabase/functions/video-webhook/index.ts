@@ -22,6 +22,18 @@ Deno.serve(async (req: Request) => {
   }
 
   try {
+    // Verify webhook secret to prevent unauthorized calls
+    const webhookSecret = Deno.env.get('VIDEO_WEBHOOK_SECRET')
+    if (webhookSecret) {
+      const authHeader = req.headers.get('x-webhook-secret') || req.headers.get('authorization')
+      if (authHeader !== webhookSecret && authHeader !== `Bearer ${webhookSecret}`) {
+        return new Response(JSON.stringify({ error: 'Unauthorized' }), {
+          status: 401,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        })
+      }
+    }
+
     const body = await req.json()
     const { status, url, metadata, error_message } = body
 

@@ -326,7 +326,11 @@ export default function LeadsScreen() {
       .select('*')
       .eq('company_id', company.id)
       .order('created_at', { ascending: false });
-    if (error) { console.error('Failed to fetch leads:', error.message); return; }
+    if (error) {
+      console.error('Failed to fetch leads:', error.message);
+      Alert.alert('Error', 'Failed to load leads. Pull down to retry.');
+      return;
+    }
     setLeads(data ?? []);
   }, [company]);
 

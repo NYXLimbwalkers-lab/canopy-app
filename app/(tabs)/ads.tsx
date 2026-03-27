@@ -162,6 +162,8 @@ export default function AdsScreen() {
       supabase.from('campaigns').select('*').eq('company_id', company.id).order('created_at', { ascending: false }),
       supabase.from('ad_accounts').select('*').eq('company_id', company.id),
     ]);
+    if (campaignRes.error) console.error('Failed to fetch campaigns:', campaignRes.error.message);
+    if (connectionRes.error) console.error('Failed to fetch ad accounts:', connectionRes.error.message);
     setCampaigns(campaignRes.data ?? []);
     const mappedConnections: AdConnection[] = (connectionRes.data ?? []).map(a => ({
       platform: a.platform as AdPlatform,
@@ -194,6 +196,15 @@ export default function AdsScreen() {
     const trimmed = accountInput.trim();
     if (!trimmed) {
       setSaveError('Please enter your account ID.');
+      return;
+    }
+    // Validate format
+    if (connectingPlatform === 'google_ads' && !/^\d{3}-\d{3}-\d{4}$/.test(trimmed) && !/^\d{10}$/.test(trimmed)) {
+      setSaveError('Google Ads ID format: 123-456-7890 or 1234567890');
+      return;
+    }
+    if (connectingPlatform === 'facebook_ads' && !/^(act_)?\d+$/.test(trimmed)) {
+      setSaveError('Facebook Ads ID format: act_123456789 or 123456789');
       return;
     }
     setSaving(true);

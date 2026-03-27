@@ -566,12 +566,14 @@ export default function ContentScreen() {
       .select('*')
       .eq('company_id', company.id)
       .order('scheduled_at', { ascending: true });
+    if (postsRes.error) console.error('Failed to fetch posts:', postsRes.error.message);
     setPosts(postsRes.data ?? []);
     try {
       const connectionsRes = await supabase
         .from('social_connections')
         .select('*')
         .eq('company_id', company.id);
+      if (connectionsRes.error) console.error('Failed to fetch connections:', connectionsRes.error.message);
       setConnections(connectionsRes.data ?? []);
     } catch {
       setConnections([]);
@@ -717,11 +719,16 @@ HOOK: (the first line)
     setPostSocialPosting(false);
 
     // Check which platforms are connected
-    const [tiktok, youtube, facebook] = await Promise.all([
-      isTikTokConnected(company.id),
-      isYouTubeConnected(company.id),
-      isFacebookConnected(company.id),
-    ]);
+    let tiktok = false, youtube = false, facebook = false;
+    try {
+      [tiktok, youtube, facebook] = await Promise.all([
+        isTikTokConnected(company.id).catch(() => false),
+        isYouTubeConnected(company.id).catch(() => false),
+        isFacebookConnected(company.id).catch(() => false),
+      ]);
+    } catch {
+      // If all checks fail, all platforms show as disconnected
+    }
     setPostSocialConnected({ tiktok, youtube, facebook });
     setPostSocialPlatforms({ tiktok, youtube, facebook: false });
     setPostSocialModal(true);
@@ -739,38 +746,46 @@ HOOK: (the first line)
       .filter(Boolean);
 
     if (postSocialPlatforms.tiktok) {
-      const res = await postToTikTok(company.id, {
-        videoUrl: postSocialVideo.url,
-        caption: postSocialCaption,
-        hashtags,
-      });
-      results.push({
-        platform: 'TikTok',
-        success: res.success,
-        message: res.success ? 'Posted successfully' : (res.error ?? 'Failed to post'),
-      });
+      try {
+        const res = await postToTikTok(company.id, {
+          videoUrl: postSocialVideo.url,
+          caption: postSocialCaption,
+          hashtags,
+        });
+        results.push({
+          platform: 'TikTok',
+          success: res.success,
+          message: res.success ? 'Posted successfully' : (res.error ?? 'Failed to post'),
+        });
+      } catch (err: any) {
+        results.push({ platform: 'TikTok', success: false, message: err.message || 'Failed to post' });
+      }
     }
 
     if (postSocialPlatforms.youtube) {
-      const res = await uploadYouTubeShort(company.id, {
-        videoUrl: postSocialVideo.url,
-        title: postSocialCaption,
-        description: `${postSocialCaption}\n\n${hashtags.join(' ')}`,
-        tags: hashtags.map(h => h.replace(/^#/, '')),
-        isShort: true,
-      });
-      results.push({
-        platform: 'YouTube Shorts',
-        success: res.success,
-        message: res.success ? 'Uploaded successfully' : (res.error ?? 'Failed to upload'),
-      });
+      try {
+        const res = await uploadYouTubeShort(company.id, {
+          videoUrl: postSocialVideo.url,
+          title: postSocialCaption,
+          description: `${postSocialCaption}\n\n${hashtags.join(' ')}`,
+          tags: hashtags.map(h => h.replace(/^#/, '')),
+          isShort: true,
+        });
+        results.push({
+          platform: 'YouTube Shorts',
+          success: res.success,
+          message: res.success ? 'Uploaded successfully' : (res.error ?? 'Failed to upload'),
+        });
+      } catch (err: any) {
+        results.push({ platform: 'YouTube Shorts', success: false, message: err.message || 'Failed to upload' });
+      }
     }
 
     if (postSocialPlatforms.facebook) {
       results.push({
         platform: 'Facebook/Instagram',
         success: false,
-        message: 'Coming soon — requires Meta app review',
+        message: 'Coming soon — requires Meta app review. Connect on Settings page to be notified.',
       });
     }
 

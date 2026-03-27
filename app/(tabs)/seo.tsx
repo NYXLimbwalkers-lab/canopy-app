@@ -14,6 +14,7 @@ import {
   Alert,
   Linking,
 } from 'react-native';
+import * as Clipboard from 'expo-clipboard';
 import { Colors } from '@/constants/Colors';
 import { Theme } from '@/constants/Theme';
 import { Badge } from '@/components/ui/Badge';
@@ -23,6 +24,7 @@ import { EmptyState } from '@/components/ui/EmptyState';
 import { ScoreCard } from '@/components/ui/ScoreCard';
 import { useAuthStore } from '@/lib/stores/authStore';
 import { supabase } from '@/lib/supabase';
+import { aiChat, isAIConfigured } from '@/lib/ai';
 
 interface GbpProfile {
   id: string;
@@ -341,9 +343,8 @@ export default function SeoScreen() {
   }, [fetchData]);
 
   const generateContentIdea = async () => {
-    const key = process.env.EXPO_PUBLIC_OPENROUTER_API_KEY;
-    if (!key || !company) {
-      setGeneratedContent('Connect your OpenRouter API key in settings to use AI content generation.');
+    if (!isAIConfigured() || !company) {
+      setGeneratedContent('Connect your OpenRouter API key in Settings to use AI content generation.');
       setContentModal(true);
       return;
     }
@@ -353,14 +354,9 @@ export default function SeoScreen() {
     setGeneratedContent(null);
 
     try {
-      const resp = await globalThis.fetch('https://openrouter.ai/api/v1/chat/completions', {
-        method: 'POST',
-        headers: { 'Authorization': `Bearer ${key}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          model: 'anthropic/claude-3-haiku',
-          messages: [{
-            role: 'user',
-            content: `Generate a Google Business Profile post for ${company.name}, a tree service company in ${company.city ?? 'their area'}.
+      const result = await aiChat([{
+        role: 'user',
+        content: `Generate a Google Business Profile post for ${company.name}, a tree service company in ${company.city ?? 'their area'}.
 
 Write a short, engaging post (2-3 sentences) that:
 - Highlights a tree service (removal, trimming, or stump grinding)
@@ -368,22 +364,17 @@ Write a short, engaging post (2-3 sentences) that:
 - Ends with a clear call to action
 
 Also suggest 3 relevant keywords to include. Keep the whole response under 150 words.`,
-          }],
-          max_tokens: 200,
-        }),
-      });
-      const json = await resp.json();
-      setGeneratedContent(json.choices?.[0]?.message?.content ?? 'Could not generate content. Try again.');
-    } catch {
-      setGeneratedContent('Error generating content. Check your connection and try again.');
+      }], { model: 'fast', maxTokens: 200 });
+      setGeneratedContent(result || 'Could not generate content. Try again.');
+    } catch (err: any) {
+      setGeneratedContent(`Error generating content: ${err.message || 'Check your connection and try again.'}`);
     } finally {
       setGeneratingContent(false);
     }
   };
 
   const generateReply = async (review: Review) => {
-    const key = process.env.EXPO_PUBLIC_OPENROUTER_API_KEY;
-    if (!key || !company) {
+    if (!isAIConfigured() || !company) {
       setReplyText('Thank you for your review! We appreciate your feedback and look forward to serving you again.');
       return;
     }
@@ -392,11 +383,9 @@ Also suggest 3 relevant keywords to include. Keep the whole response under 150 w
     setReplyText('');
 
     try {
-      const resp = await globalThis.fetch('https://openrouter.ai/api/v1/chat/completions', {
-        method: 'POST',
-        headers: { 'Authorization': `Bearer ${key}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          model: 'anthropic/claude-3-haiku',
+      const result = await aiChat([{
+        role: 'user',
+        content: `Write a professional, warm response to this ${review.rating}-star Google review for ${company.name} (tree service company).
           messages: [{
             role: 'user',
             content: `Write a professional, warm response to this ${review.rating}-star Google review for ${company.name} (tree service company).
@@ -404,12 +393,8 @@ Also suggest 3 relevant keywords to include. Keep the whole response under 150 w
 Review from ${review.reviewer_name}: "${review.body ?? '(No text provided)'}"
 
 Keep it under 50 words. Be genuine, thank them by name, and invite them back or address any concern. Don't be overly formal.`,
-          }],
-          max_tokens: 100,
-        }),
-      });
-      const json = await resp.json();
-      setReplyText(json.choices?.[0]?.message?.content ?? '');
+      }], { model: 'fast', maxTokens: 100 });
+      setReplyText(result || '');
     } catch {
       setReplyText('Thank you for your review! We truly appreciate your feedback.');
     } finally {
@@ -828,8 +813,19 @@ Keep it under 50 words. Be genuine, thank them by name, and invite them back or 
               <Text style={styles.contentModalClose}>Cancel</Text>
             </TouchableOpacity>
             <Text style={styles.contentModalTitle}>Reply to Review</Text>
-            <TouchableOpacity onPress={() => setReplyModal(null)}>
-              <Text style={styles.contentModalClose}>Send</Text>
+            <TouchableOpacity onPress={async () => {
+              if (replyText.trim()) {
+                await Clipboard.setStringAsync(replyText.trim());
+                Alert.alert(
+                  'Reply Copied',
+                  'Your reply has been copied to the clipboard. Paste it in Google Business Profile to send it.\n\nDirect reply posting requires Google Business Profile API access (pending approval).',
+                  [{ text: 'OK', onPress: () => setReplyModal(null) }]
+                );
+              } else {
+                setReplyModal(null);
+              }
+            }}>
+              <Text style={[styles.contentModalClose, { color: Colors.primary, fontWeight: '700' as any }]}>Copy & Close</Text>
             </TouchableOpacity>
           </View>
           {replyModal && (

@@ -34,29 +34,42 @@ export async function aiChat(messages: ChatMessage[], options: AIOptions = {}): 
 
   const model = MODEL_MAP[options.model ?? 'fast'];
 
-  const resp = await fetch(`${OPENROUTER_BASE}/chat/completions`, {
-    method: 'POST',
-    headers: {
-      'Authorization': `Bearer ${key}`,
-      'Content-Type': 'application/json',
-      'HTTP-Referer': 'https://canopy.app',
-      'X-Title': 'Canopy Tree Service SaaS',
-    },
-    body: JSON.stringify({
-      model,
-      messages,
-      max_tokens: options.maxTokens ?? 500,
-      temperature: options.temperature ?? 0.7,
-    }),
-  });
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 30000);
 
-  if (!resp.ok) {
-    const err = await resp.text();
-    throw new Error(`AI error ${resp.status}: ${err}`);
+  try {
+    const resp = await fetch(`${OPENROUTER_BASE}/chat/completions`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${key}`,
+        'Content-Type': 'application/json',
+        'HTTP-Referer': 'https://canopy.app',
+        'X-Title': 'Canopy Tree Service SaaS',
+      },
+      body: JSON.stringify({
+        model,
+        messages,
+        max_tokens: options.maxTokens ?? 500,
+        temperature: options.temperature ?? 0.7,
+      }),
+      signal: controller.signal,
+    });
+
+    if (!resp.ok) {
+      const err = await resp.text();
+      throw new Error(`AI error ${resp.status}: ${err}`);
+    }
+
+    const data = await resp.json();
+    return data.choices?.[0]?.message?.content ?? '';
+  } catch (err: any) {
+    if (err.name === 'AbortError') {
+      throw new Error('AI request timed out (30s). Please try again.');
+    }
+    throw err;
+  } finally {
+    clearTimeout(timeout);
   }
-
-  const data = await resp.json();
-  return data.choices?.[0]?.message?.content ?? '';
 }
 
 // ─── Specialized AI functions ────────────────────────────────────────────────

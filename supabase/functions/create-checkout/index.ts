@@ -50,7 +50,7 @@ Deno.serve(async (req: Request) => {
       httpClient: Stripe.createFetchHttpClient(),
     })
 
-    const appUrl = Deno.env.get('APP_URL') ?? 'https://canopy-app-ten.vercel.app'
+    const appUrl = Deno.env.get('APP_URL') ?? 'https://canopy-app-three.vercel.app'
 
     const checkoutSession = await stripe.checkout.sessions.create({
       mode: 'subscription',
