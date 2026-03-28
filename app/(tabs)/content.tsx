@@ -1105,6 +1105,7 @@ export default function ContentScreen() {
       <GuidanceCard
         title="How video creation works"
         icon="🎬"
+        dark
         steps={[
           'Pick a video type below — each one is designed for tree service content',
           'Choose your tone (casual, pro, funny) and platform (TikTok, YouTube, Reels)',
@@ -1781,7 +1782,7 @@ export default function ContentScreen() {
     <Modal
       visible={compositionModal}
       animationType="slide"
-      presentationStyle="pageSheet"
+      presentationStyle="fullScreen"
       onRequestClose={() => setCompositionModal(false)}
     >
       <View style={ce.container}>
