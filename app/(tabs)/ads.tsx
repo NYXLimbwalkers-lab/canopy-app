@@ -137,10 +137,12 @@ function LSASetupGuide({
   checklist,
   onToggleStep,
   onOpenSignup,
+  onSignIn,
 }: {
   checklist: LSAProfile['setup_checklist'];
   onToggleStep: (key: keyof LSAProfile['setup_checklist']) => void;
   onOpenSignup: () => void;
+  onSignIn: () => void;
 }) {
   const completedCount = Object.values(checklist).filter(Boolean).length;
   const totalSteps = LSA_SETUP_STEPS.length;
@@ -215,16 +217,32 @@ function LSASetupGuide({
         })}
       </View>
 
-      {/* Sign Up Button */}
+      {/* Action Button — Sign In when ready, or Signup link when not */}
       <View style={styles.lsaSignupSection}>
-        <Button
-          label={allComplete ? 'Sign Up for Google LSA' : 'Open Google LSA Signup'}
-          onPress={onOpenSignup}
-          size="lg"
-        />
-        <Text style={styles.lsaSignupNote}>
-          Opens Google's Local Services Ads enrollment page
-        </Text>
+        {allComplete ? (
+          <>
+            <Button
+              label="✅ Sign In to Google LSA"
+              onPress={onSignIn}
+              size="lg"
+            />
+            <Text style={styles.lsaSignupNote}>
+              Already set up — sign in to connect your LSA dashboard
+            </Text>
+          </>
+        ) : (
+          <>
+            <Button
+              label="Open Google LSA Signup"
+              onPress={onOpenSignup}
+              size="lg"
+              variant="outline"
+            />
+            <Text style={styles.lsaSignupNote}>
+              Complete the checklist above, then sign in to connect
+            </Text>
+          </>
+        )}
       </View>
     </Card>
   );
@@ -539,6 +557,27 @@ export default function AdsScreen() {
     Linking.openURL(LSA_SIGNUP_URL);
   };
 
+  const handleLSASignIn = async () => {
+    // Open the LSA dashboard, then mark as connected
+    Linking.openURL(LSA_SIGNUP_URL);
+    if (!company) return;
+    const updated = {
+      ...lsaProfile,
+      connected: true,
+      badge_status: 'pending' as const,
+      company_id: company.id,
+    };
+    setLsaProfile(updated);
+    await supabase.from('lsa_profiles').upsert({
+      company_id: company.id,
+      connected: true,
+      badge_status: 'pending',
+      setup_checklist: updated.setup_checklist,
+      weekly_budget: updated.weekly_budget,
+      service_categories: updated.service_categories,
+    }, { onConflict: 'company_id' });
+  };
+
   const handleAdjustBudget = () => {
     setLsaBudgetInput(lsaProfile.weekly_budget?.toString() ?? '');
     setLsaBudgetModal(true);
@@ -642,6 +681,7 @@ export default function AdsScreen() {
               checklist={lsaProfile.setup_checklist}
               onToggleStep={handleToggleLSAStep}
               onOpenSignup={handleOpenLSASignup}
+              onSignIn={handleLSASignIn}
             />
           )}
 
