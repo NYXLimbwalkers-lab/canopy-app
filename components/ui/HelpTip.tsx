@@ -70,29 +70,39 @@ export function HelpTip({ label, tip, aiTip, variant = 'inline', icon }: HelpTip
 }
 
 /** Standalone guidance card — use at the top of complex sections */
-export function GuidanceCard({ title, steps, icon }: {
+export function GuidanceCard({ title, steps, icon, dark }: {
   title: string;
   steps: string[];
   icon?: string;
+  /** Use dark=true on dark-themed pages like Content Studio */
+  dark?: boolean;
 }) {
   const [dismissed, setDismissed] = useState(false);
   if (dismissed) return null;
 
+  const dBg = dark ? '#1A282020' : Colors.info + '08';
+  const dBorder = dark ? '#40916C40' : Colors.info + '20';
+  const dTitle = dark ? '#F9FAFB' : Colors.text;
+  const dStep = dark ? '#9CA3AF' : Colors.textSecondary;
+  const dDismiss = dark ? '#40916C' : Colors.info;
+  const dNumBg = dark ? '#40916C25' : Colors.info + '20';
+  const dNumText = dark ? '#40916C' : Colors.info;
+
   return (
-    <View style={styles.guideCard}>
+    <View style={[styles.guideCard, { backgroundColor: dBg, borderColor: dBorder }]}>
       <View style={styles.guideHeader}>
         <Text style={styles.guideIcon}>{icon ?? '📋'}</Text>
-        <Text style={styles.guideTitle}>{title}</Text>
+        <Text style={[styles.guideTitle, { color: dTitle }]}>{title}</Text>
         <TouchableOpacity onPress={() => setDismissed(true)} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
-          <Text style={styles.guideDismiss}>Got it</Text>
+          <Text style={[styles.guideDismiss, { color: dDismiss }]}>Got it</Text>
         </TouchableOpacity>
       </View>
       {steps.map((step, i) => (
         <View key={i} style={styles.guideStep}>
-          <View style={styles.guideStepNum}>
-            <Text style={styles.guideStepNumText}>{i + 1}</Text>
+          <View style={[styles.guideStepNum, { backgroundColor: dNumBg }]}>
+            <Text style={[styles.guideStepNumText, { color: dNumText }]}>{i + 1}</Text>
           </View>
-          <Text style={styles.guideStepText}>{step}</Text>
+          <Text style={[styles.guideStepText, { color: dStep }]}>{step}</Text>
         </View>
       ))}
     </View>
