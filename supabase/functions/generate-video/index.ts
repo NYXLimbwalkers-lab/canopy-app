@@ -200,8 +200,24 @@ async function processVideo(
   // Try ElevenLabs first (premium quality voice)
   if (elevenLabsKey) {
     try {
+      // Fetch available voices from the user's account and pick one at random
+      let voiceId = 'TxGEqnHWrfWFTfGW9XjX' // default fallback voice
+      try {
+        const voicesResp = await fetch('https://api.elevenlabs.io/v1/voices', {
+          headers: { 'xi-api-key': elevenLabsKey },
+        })
+        if (voicesResp.ok) {
+          const voicesData = await voicesResp.json()
+          const voices = voicesData.voices ?? []
+          if (voices.length > 0) {
+            const randomVoice = voices[Math.floor(Math.random() * voices.length)]
+            voiceId = randomVoice.voice_id
+          }
+        }
+      } catch {}
+
       const ttsResp = await fetch(
-        'https://api.elevenlabs.io/v1/text-to-speech/TxGEqnHWrfWFTfGW9XjX',
+        `https://api.elevenlabs.io/v1/text-to-speech/${voiceId}`,
         {
           method: 'POST',
           headers: { 'xi-api-key': elevenLabsKey, 'Content-Type': 'application/json' },
