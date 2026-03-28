@@ -23,6 +23,7 @@ import { EmptyState } from '@/components/ui/EmptyState';
 import { useAuthStore } from '@/lib/stores/authStore';
 import { supabase } from '@/lib/supabase';
 import { aiChat, isAIConfigured } from '@/lib/ai';
+import { speak, speakPrompt } from '@/lib/tts';
 import { router } from 'expo-router';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
@@ -713,6 +714,8 @@ function VoiceEstimateModal({
     summary: string;
   } | null>(null);
   const [saving, setSaving] = useState(false);
+  const [missingInfo, setMissingInfo] = useState<string[] | null>(null);
+  const [checkingInfo, setCheckingInfo] = useState(false);
 
   const inputText = transcript || manualInput;
 
@@ -720,12 +723,81 @@ function VoiceEstimateModal({
     setManualInput('');
     setTranscript('');
     setParsed(null);
+    setMissingInfo(null);
   };
 
   const handleClose = () => {
     resetAll();
     if (isListening) stopListening();
     onClose();
+  };
+
+  // Smart pre-check: detect missing details before generating the estimate
+  const handleSmartCheck = async () => {
+    if (!inputText.trim()) {
+      Alert.alert('Nothing to Parse', 'Describe the job first — speak or type.');
+      return;
+    }
+    if (!isAIConfigured()) {
+      Alert.alert('AI Not Configured', 'Add your OpenRouter API key in Settings to use AI features.');
+      return;
+    }
+
+    setCheckingInfo(true);
+    setMissingInfo(null);
+    try {
+      const result = await aiChat([
+        {
+          role: 'system',
+          content: `You are a tree service estimating assistant. Your job is to check if a job description has enough detail to create an accurate estimate. If critical details are missing, list them. If the description is good enough, say so.
+
+CRITICAL details for an accurate tree estimate:
+- Type of work (removal, trimming, stump grinding, etc.)
+- Tree size or height (approximate)
+- Tree species if known (affects difficulty and pricing)
+- Location factors (near house, near power lines, backyard access, slope)
+- Drop zone availability (where the tree can fall)
+- Number of trees
+- Cleanup expectations (haul away, leave wood, chip on site)
+- Any hazards (dead tree, hanging limbs, storm damage)
+
+NICE TO HAVE but not required:
+- Customer name/contact
+- Desired timeline
+- Budget range`,
+        },
+        {
+          role: 'user',
+          content: `Check this job description for missing details that would affect pricing accuracy:
+
+"${inputText}"
+
+If important details are missing, return JSON: {"missing": ["short question about missing detail 1", "short question about missing detail 2"]}
+If the description has enough detail for a reasonable estimate, return: {"missing": []}
+Only flag things that would significantly change the price. Max 4 questions. Keep questions short and conversational, like you're asking a coworker.`,
+        },
+      ], { model: 'fast', maxTokens: 300, temperature: 0.2 });
+
+      const match = result.match(/\{[\s\S]*\}/);
+      if (match) {
+        const data = JSON.parse(match[0]);
+        const missing = data.missing || [];
+        if (missing.length > 0) {
+          setMissingInfo(missing);
+          // Speak the first missing detail aloud
+          const prompt = `Before I build this estimate, a couple quick questions. ${missing[0]}`;
+          speakPrompt(prompt);
+          return;
+        }
+      }
+      // No missing info — go straight to parsing
+      handleParse();
+    } catch {
+      // If the check fails, just go ahead and parse anyway
+      handleParse();
+    } finally {
+      setCheckingInfo(false);
+    }
   };
 
   const handleParse = async () => {
@@ -739,6 +811,7 @@ function VoiceEstimateModal({
       return;
     }
 
+    setMissingInfo(null);
     setParsing(true);
     try {
       const result = await aiChat([
@@ -1025,16 +1098,61 @@ Rules:
                 numberOfLines={6}
               />
 
+              {/* Missing info prompts */}
+              {missingInfo && missingInfo.length > 0 && (
+                <View style={voiceStyles.missingCard}>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+                    <Text style={{ fontSize: 16 }}>💡</Text>
+                    <Text style={voiceStyles.missingTitle}>A few details would improve this estimate:</Text>
+                  </View>
+                  {missingInfo.map((q, i) => (
+                    <View key={i} style={voiceStyles.missingRow}>
+                      <Text style={voiceStyles.missingBullet}>•</Text>
+                      <Text style={voiceStyles.missingText}>{q}</Text>
+                    </View>
+                  ))}
+                  <Text style={voiceStyles.missingHint}>
+                    Add these details above, or tap "Build Anyway" to estimate with what you have.
+                  </Text>
+                  <View style={{ flexDirection: 'row', gap: 10, marginTop: 8 }}>
+                    <TouchableOpacity
+                      style={[voiceStyles.parseBtn, { flex: 1, backgroundColor: '#40916C' }]}
+                      onPress={handleParse}
+                      disabled={parsing}
+                    >
+                      <Text style={voiceStyles.parseBtnText}>
+                        {parsing ? 'Building...' : 'Build Anyway'}
+                      </Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={[voiceStyles.parseBtn, { flex: 1, backgroundColor: '#7C3AED' }]}
+                      onPress={() => {
+                        // Speak all missing questions
+                        const allQ = missingInfo.join('. Also, ');
+                        speakPrompt(`Quick questions: ${allQ}`);
+                      }}
+                    >
+                      <Text style={voiceStyles.parseBtnText}>🔊 Hear Questions</Text>
+                    </TouchableOpacity>
+                  </View>
+                </View>
+              )}
+
               {/* AI Parse button */}
               <TouchableOpacity
-                style={[voiceStyles.parseBtn, !inputText.trim() && { opacity: 0.4 }]}
-                onPress={handleParse}
-                disabled={parsing || !inputText.trim()}
+                style={[voiceStyles.parseBtn, (!inputText.trim() || checkingInfo || parsing) && { opacity: 0.4 }]}
+                onPress={handleSmartCheck}
+                disabled={parsing || checkingInfo || !inputText.trim()}
               >
                 {parsing ? (
                   <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
                     <ActivityIndicator size="small" color="#fff" />
                     <Text style={voiceStyles.parseBtnText}>AI is building your estimate...</Text>
+                  </View>
+                ) : checkingInfo ? (
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+                    <ActivityIndicator size="small" color="#fff" />
+                    <Text style={voiceStyles.parseBtnText}>Checking for missing details...</Text>
                   </View>
                 ) : (
                   <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
@@ -1059,7 +1177,17 @@ Rules:
               {/* Job summary */}
               {parsed.summary ? (
                 <View style={voiceStyles.summaryCard}>
-                  <Text style={voiceStyles.summaryTitle}>📋 Job Summary</Text>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+                    <Text style={voiceStyles.summaryTitle}>📋 Job Summary</Text>
+                    {Platform.OS === 'web' && (
+                      <TouchableOpacity
+                        onPress={() => speak(`Here's your estimate summary. ${parsed.summary}. The total comes to $${total.toLocaleString()}.`)}
+                        style={{ padding: 4 }}
+                      >
+                        <Text style={{ fontSize: 18 }}>🔊</Text>
+                      </TouchableOpacity>
+                    )}
+                  </View>
                   <Text style={voiceStyles.summaryText}>{parsed.summary}</Text>
                 </View>
               ) : null}
@@ -2498,6 +2626,19 @@ const voiceStyles = StyleSheet.create({
     ...Theme.shadow.sm,
   },
   parseBtnText: { fontSize: 16, fontWeight: Theme.font.weight.bold, color: '#fff' },
+  // Missing info card
+  missingCard: {
+    backgroundColor: '#FEF3C7',
+    borderRadius: Theme.radius.lg,
+    padding: Theme.space.lg,
+    borderWidth: 1,
+    borderColor: '#F59E0B40',
+  },
+  missingTitle: { fontSize: 14, fontWeight: Theme.font.weight.semibold, color: '#92400E', flex: 1 },
+  missingRow: { flexDirection: 'row', gap: 8, paddingLeft: 4, marginBottom: 4 },
+  missingBullet: { fontSize: 14, color: '#B45309' },
+  missingText: { fontSize: 14, color: '#78350F', flex: 1, lineHeight: 20 },
+  missingHint: { fontSize: 12, color: '#92400E', fontStyle: 'italic' as const, marginTop: 6 },
   // Tips
   tipsCard: {
     backgroundColor: Colors.surface,

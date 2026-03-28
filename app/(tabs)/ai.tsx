@@ -17,6 +17,7 @@ import {
 import { useAuthStore } from '@/lib/stores/authStore';
 import { supabase } from '@/lib/supabase';
 import { crossAlert } from '@/lib/crossAlert';
+import { speak, stop as stopTTS, isSpeaking } from '@/lib/tts';
 
 if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
   UIManager.setLayoutAnimationEnabledExperimental(true);
@@ -545,6 +546,7 @@ export default function AIExpertScreen() {
   const [loading, setLoading] = useState(false);
   const [snapshot, setSnapshot] = useState<BusinessSnapshot | null>(null);
   const [contextExpanded, setContextExpanded] = useState(false);
+  const [speakingMsgId, setSpeakingMsgId] = useState<string | null>(null);
   const [conversationId, setConversationId] = useState<string | null>(null);
   const [recentContext, setRecentContext] = useState<string>('');
   const [actionsCollapsed, setActionsCollapsed] = useState(false);
@@ -1567,6 +1569,32 @@ export default function AIExpertScreen() {
                         <Text style={[styles.bubbleText, msg.role === 'user' ? styles.userBubbleText : styles.aiBubbleText]}>
                           {typeof msg.content === 'string' ? msg.content : JSON.stringify(msg.content)}
                         </Text>
+                        {msg.role === 'assistant' && Platform.OS === 'web' && (
+                          <TouchableOpacity
+                            style={styles.ttsBtn}
+                            onPress={() => {
+                              if (speakingMsgId === msg.id) {
+                                stopTTS();
+                                setSpeakingMsgId(null);
+                              } else {
+                                speak(msg.content);
+                                setSpeakingMsgId(msg.id);
+                                // Check periodically if TTS finished
+                                const check = setInterval(() => {
+                                  if (!isSpeaking()) {
+                                    setSpeakingMsgId(null);
+                                    clearInterval(check);
+                                  }
+                                }, 500);
+                              }
+                            }}
+                            activeOpacity={0.7}
+                          >
+                            <Text style={styles.ttsBtnText}>
+                              {speakingMsgId === msg.id ? '⏹' : '🔊'}
+                            </Text>
+                          </TouchableOpacity>
+                        )}
                       </View>
 
                       {/* Inline Action Data Cards */}
@@ -1893,6 +1921,8 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   bubbleText: { fontSize: Theme.font.size.body, lineHeight: 22, flex: 1 },
+  ttsBtn: { position: 'absolute' as const, top: 6, right: 6, width: 28, height: 28, borderRadius: 14, backgroundColor: 'rgba(0,0,0,0.15)', alignItems: 'center', justifyContent: 'center' },
+  ttsBtnText: { fontSize: 14 },
   userBubbleText: { color: '#FFFFFF' },
   aiBubbleText: { color: Colors.text },
 
