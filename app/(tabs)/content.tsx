@@ -402,17 +402,18 @@ function VideoGenerateModal({ visible, videoId, invokeError, onClose, onPostToSo
     pollStatus();
 
     // Also poll every 15s as a fallback in case Realtime misses an update
-    const pollInterval = setInterval(pollStatus, 15000);
+    const pollInterval = setInterval(pollStatus, 8000);
 
-    // Timeout: if still processing after 3 minutes, show as failed
+    // Timeout: if still processing after 5 minutes, show as failed
+    // Render server cold-starts + downloads + processes + uploads can take 3-4 min
     const timeout = setTimeout(() => {
       setVideo(prev => {
         if (prev && (prev.status === 'ready' || prev.status === 'failed')) return prev;
-        return { id: videoId, status: 'failed', error_message: 'Video generation timed out. The render server may be unavailable — please try again.' } as GeneratedVideo;
+        return { id: videoId, status: 'failed', error_message: 'Video generation timed out. The render server may be warming up — please try again in a minute.' } as GeneratedVideo;
       });
       clearInterval(stepTimerRef.current!);
       setStepIndex(PROGRESS_STEPS.length - 1);
-    }, 180000);
+    }, 300000);
 
     // Subscribe to Realtime updates on this video row
     const channel = supabase
@@ -645,6 +646,7 @@ export default function ContentScreen() {
   const [socialInput,       setSocialInput]       = useState('');
   const [socialSaving,      setSocialSaving]      = useState(false);
   const [socialError,       setSocialError]       = useState<string | null>(null);
+  const [connectingPlatform, setConnectingPlatform] = useState<string | null>(null);
 
   // Customization state (pre-generation options)
   const [customizeModal,    setCustomizeModal]    = useState(false);
@@ -830,10 +832,12 @@ export default function ContentScreen() {
 
   // ── Social connect ─────────────────────────────────────────────────────────
   const handleSocialConnect = (platformKey: string) => {
+    setConnectingPlatform(platformKey);
     setSocialPlatform(platformKey);
     setSocialInput('');
     setSocialError(null);
     setSocialModal(true);
+    setConnectingPlatform(null);
   };
 
   const handleSaveSocial = async () => {
@@ -1088,11 +1092,16 @@ export default function ContentScreen() {
                   </View>
                 ) : (
                   <TouchableOpacity
-                    style={s.connectBtn}
+                    style={[s.connectBtn, connectingPlatform === platform.key && { opacity: 0.6 }]}
                     onPress={() => handleSocialConnect(platform.key)}
                     activeOpacity={0.8}
+                    disabled={connectingPlatform === platform.key}
                   >
-                    <Text style={s.connectBtnText}>Connect</Text>
+                    {connectingPlatform === platform.key ? (
+                      <ActivityIndicator color={D.text} size="small" />
+                    ) : (
+                      <Text style={s.connectBtnText}>Connect</Text>
+                    )}
                   </TouchableOpacity>
                 )}
               </View>
@@ -1198,14 +1207,22 @@ export default function ContentScreen() {
 
             {/* Generate button */}
             <TouchableOpacity
-              style={cm.generateBtn}
+              style={[cm.generateBtn, generatingScript && { opacity: 0.6 }]}
               onPress={() => {
                 setCustomizeModal(false);
                 if (selectedVideoType) generateScript(selectedVideoType);
               }}
               activeOpacity={0.85}
+              disabled={generatingScript}
             >
-              <Text style={cm.generateBtnText}>✦ Generate Script</Text>
+              {generatingScript ? (
+                <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
+                  <ActivityIndicator color="#FFFFFF" size="small" />
+                  <Text style={cm.generateBtnText}>Generating…</Text>
+                </View>
+              ) : (
+                <Text style={cm.generateBtnText}>✦ Generate Script</Text>
+              )}
             </TouchableOpacity>
           </ScrollView>
         </View>
@@ -1291,12 +1308,14 @@ export default function ContentScreen() {
 
                 <View style={sm.actionRow}>
                   <Button
-                    label="Regenerate"
+                    label={generatingScript ? 'Regenerating…' : 'Regenerate'}
                     variant="secondary"
                     size="sm"
                     onPress={() => selectedVideoType && generateScript(selectedVideoType)}
                     style={sm.regenBtn}
+                    disabled={generatingScript}
                   />
+                  {generatingScript && <ActivityIndicator color={D.purple} size="small" style={{ marginLeft: 8 }} />}
                 </View>
 
                 <View style={sm.makeVideoSection}>
@@ -1381,11 +1400,16 @@ export default function ContentScreen() {
                         </View>
                       ) : null}
                       <TouchableOpacity
-                        style={sm.uploadBtn}
+                        style={[sm.uploadBtn, uploadingClips && { opacity: 0.6 }]}
                         onPress={handleUploadClips}
                         activeOpacity={0.85}
+                        disabled={uploadingClips}
                       >
-                        <Text style={sm.uploadBtnIcon}>+</Text>
+                        {uploadingClips ? (
+                          <ActivityIndicator color={D.text} size="small" />
+                        ) : (
+                          <Text style={sm.uploadBtnIcon}>+</Text>
+                        )}
                         <Text style={sm.uploadBtnText}>
                           {uploadingClips ? 'Uploading...' : 'Upload Video Clips'}
                         </Text>
@@ -1398,12 +1422,13 @@ export default function ContentScreen() {
 
                   {/* Film yourself option */}
                   <TouchableOpacity
-                    style={sm.filmBtn}
+                    style={[sm.filmBtn, generatingVideo && { opacity: 0.5 }]}
                     onPress={() => {
                       setScriptModal(false);
                       setTeleprompterModal(true);
                     }}
                     activeOpacity={0.85}
+                    disabled={generatingVideo}
                   >
                     <View style={sm.filmBtnLeft}>
                       <Text style={sm.filmBtnIcon}>📱</Text>
