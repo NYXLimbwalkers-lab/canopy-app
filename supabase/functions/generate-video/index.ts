@@ -65,7 +65,7 @@ Deno.serve(async (req: Request) => {
   )
 
   try {
-    const { script, videoType, companyId, captionStyle, pacing, clipPrefix } = await req.json()
+    const { script, videoType, companyId, captionStyle, pacing, clipPrefix, composition } = await req.json()
 
     if (!script || !videoType || !companyId) {
       return new Response(JSON.stringify({ error: 'Missing script, videoType, or companyId' }), {
@@ -80,7 +80,7 @@ Deno.serve(async (req: Request) => {
     // Create DB record immediately so client can subscribe to Realtime
     const { data: videoRecord, error: insertError } = await supabase
       .from('generated_videos')
-      .insert({ company_id: companyId, script, video_type: videoType, status: 'processing' })
+      .insert({ company_id: companyId, script, video_type: videoType, status: 'processing', composition: composition ?? null })
       .select()
       .single()
 
@@ -92,7 +92,7 @@ Deno.serve(async (req: Request) => {
 
     // Process video synchronously — Deno Deploy kills dangling promises after response
     try {
-      await processVideo(supabase, videoId, script, videoType, renderCaptionStyle, renderPacing, clipPrefix)
+      await processVideo(supabase, videoId, script, videoType, renderCaptionStyle, renderPacing, clipPrefix, composition)
     } catch (processErr: unknown) {
       const msg = processErr instanceof Error ? processErr.message : 'Processing failed'
       await supabase
@@ -244,6 +244,7 @@ async function processVideo(
   captionStyle: string = 'bold',
   pacing: string = 'medium',
   clipPrefix: string | null = null,
+  composition: any = null,
 ) {
   const elevenLabsKey   = Deno.env.get('ELEVENLABS_API_KEY')
   const pexelsKey       = Deno.env.get('PEXELS_API_KEY')
@@ -377,41 +378,70 @@ async function processVideo(
   }
 
   if (pexelsKey && videoClips.length === 0) {
-    const maxClips = pacing === 'fast' ? 6 : pacing === 'slow' ? 3 : 4
+    // If we have a composition, search per-scene for better footage matching
+    const scenes = composition?.scenes ?? []
+    if (scenes.length > 0) {
+      // Per-scene search — each scene gets its own relevant footage
+      for (let i = 0; i < scenes.length; i++) {
+        const scene = scenes[i]
+        const query = scene.searchQuery || extractVisualKeywords(scene.caption || '', videoType)
+        await updateProgress(supabase, videoId, `Finding footage for scene ${i + 1} of ${scenes.length}...`, 30 + Math.round((i / scenes.length) * 15))
 
-    // Extract visual keywords from the script for smarter search
-    const scriptKeywords = extractVisualKeywords(spokenText, videoType)
+        const pexelsResp = await fetchWithTimeout(
+          `https://api.pexels.com/videos/search?query=${encodeURIComponent(query)}&per_page=3&orientation=portrait&size=medium`,
+          { headers: { Authorization: pexelsKey } },
+        )
+        if (pexelsResp.ok) {
+          const pexelsData = await pexelsResp.json()
+          const firstVideo = (pexelsData.videos ?? [])[0]
+          if (firstVideo) {
+            const bestFile = firstVideo.video_files?.find((f: any) => f.quality === 'sd' && f.height >= 720)
+              ?? firstVideo.video_files?.find((f: any) => f.quality === 'sd')
+              ?? firstVideo.video_files?.find((f: any) => f.quality === 'hd')
+              ?? firstVideo.video_files?.[0]
+            if (bestFile?.link) videoClips.push(bestFile.link)
+          }
+        }
+      }
+      console.log(`[${videoId}] Per-scene search found ${videoClips.length} clips for ${scenes.length} scenes`)
+    } else {
+      // Legacy search — no composition, use generic queries
+      const maxClips = pacing === 'fast' ? 6 : pacing === 'slow' ? 3 : 4
+      const scriptKeywords = extractVisualKeywords(spokenText, videoType)
+      const queries = [
+        scriptKeywords,
+        VIDEO_TYPE_SEARCH[videoType] ?? 'tree service arborist',
+      ]
 
-    // Search with multiple queries for variety
-    const queries = [
-      scriptKeywords,
-      VIDEO_TYPE_SEARCH[videoType] ?? 'tree service arborist',
-    ]
+      for (const query of queries) {
+        if (videoClips.length >= maxClips) break
+        const remaining = maxClips - videoClips.length
+        const pexelsResp = await fetchWithTimeout(
+          `https://api.pexels.com/videos/search?query=${encodeURIComponent(query)}&per_page=${remaining + 2}&orientation=portrait&size=medium`,
+          { headers: { Authorization: pexelsKey } },
+        )
 
-    for (const query of queries) {
-      if (videoClips.length >= maxClips) break
-      const remaining = maxClips - videoClips.length
-      const pexelsResp = await fetchWithTimeout(
-        `https://api.pexels.com/videos/search?query=${encodeURIComponent(query)}&per_page=${remaining + 2}&orientation=portrait&size=medium`,
-        { headers: { Authorization: pexelsKey } },
-      )
-
-      if (pexelsResp.ok) {
-        const pexelsData = await pexelsResp.json()
-        for (const video of (pexelsData.videos ?? []).slice(0, remaining)) {
-          const bestFile = video.video_files?.find((f: any) => f.quality === 'sd' && f.height >= 720)
-            ?? video.video_files?.find((f: any) => f.quality === 'sd')
-            ?? video.video_files?.find((f: any) => f.quality === 'hd')
-            ?? video.video_files?.[0]
-          if (bestFile?.link && !videoClips.includes(bestFile.link)) {
+        if (pexelsResp.ok) {
+          const pexelsData = await pexelsResp.json()
+          for (const video of (pexelsData.videos ?? []).slice(0, remaining)) {
+            const bestFile = video.video_files?.find((f: any) => f.quality === 'sd' && f.height >= 720)
+              ?? video.video_files?.find((f: any) => f.quality === 'sd')
+              ?? video.video_files?.find((f: any) => f.quality === 'hd')
+              ?? video.video_files?.[0]
+            if (bestFile?.link && !videoClips.includes(bestFile.link)) {
             videoClips.push(bestFile.link)
           }
         }
       }
     }
+    } // close else (legacy search)
   }
 
-  // Estimate total duration from spoken text (~2.5 words/sec for natural pacing)
+  // Use composition scene durations if available, otherwise estimate from text
+  const wordCount = spokenText.split(/\s+/).length
+  const estimatedDuration = composition?.scenes?.length > 0
+    ? composition.scenes.reduce((sum: number, s: any) => sum + (s.duration || 5), 0)
+    : Math.max(20, Math.min(60, Math.round(wordCount / 2.5)))
   const wordCount = spokenText.split(/\s+/).length
   const estimatedDuration = Math.max(20, Math.min(60, Math.round(wordCount / 2.5)))
 
@@ -465,25 +495,75 @@ async function renderViaCreatomate(
 ) {
   // Build a Creatomate source JSON (dynamic template)
   // 9:16 portrait video with stock clips, voiceover, captions, and watermark
-  const clipDuration = videoClips.length > 0
-    ? totalDuration / videoClips.length
-    : totalDuration
 
-  // Build elements array: video clips as composition, then text overlays
-  const clipElements = videoClips.map((url, i) => ({
-    type: 'video',
-    source: url,
-    trim_start: 0,
-    trim_duration: clipDuration,
-    // Each clip plays sequentially
-    time: i * clipDuration,
-    duration: clipDuration,
-  }))
+  // Build clip elements — use composition scene data if available for per-scene timing
+  const clipElements: any[] = []
+  const captionData: { text: string; time: number; duration: number }[] = []
 
-  // Caption: split into timed segments
-  const sentences = spokenText.split(/(?<=[.!?])\s+/).filter(s => s.length > 5)
-  const maxSegs = Math.min(sentences.length, 6)
-  const segDuration = totalDuration / maxSegs
+  // Try to get composition scenes from the request
+  const compScenes: any[] = []
+  try {
+    // composition is passed via the outer scope when the edge function stores it
+    const { data: videoRow } = await supabase
+      .from('generated_videos')
+      .select('composition')
+      .eq('id', videoId)
+      .single()
+    if (videoRow?.composition?.scenes) {
+      compScenes.push(...videoRow.composition.scenes)
+    }
+  } catch {}
+
+  if (compScenes.length > 0 && videoClips.length > 0) {
+    // Composition-based: each scene has its own duration and caption
+    let timeOffset = 0
+    for (let i = 0; i < Math.min(compScenes.length, videoClips.length); i++) {
+      const scene = compScenes[i]
+      const dur = scene.duration || 5
+      clipElements.push({
+        type: 'video',
+        source: videoClips[i],
+        trim_start: scene.trimStart || 0,
+        trim_duration: dur,
+        time: timeOffset,
+        duration: dur,
+      })
+      if (scene.caption && captionStyle !== 'none') {
+        captionData.push({
+          text: scene.caption.length > 80 ? scene.caption.slice(0, 77) + '...' : scene.caption,
+          time: timeOffset,
+          duration: dur,
+        })
+      }
+      timeOffset += dur
+    }
+  } else {
+    // Legacy: equal duration per clip
+    const clipDuration = videoClips.length > 0
+      ? totalDuration / videoClips.length
+      : totalDuration
+    videoClips.forEach((url, i) => {
+      clipElements.push({
+        type: 'video',
+        source: url,
+        trim_start: 0,
+        trim_duration: clipDuration,
+        time: i * clipDuration,
+        duration: clipDuration,
+      })
+    })
+    // Legacy captions from sentence splitting
+    const sentences = spokenText.split(/(?<=[.!?])\s+/).filter(s => s.length > 5)
+    const maxSegs = Math.min(sentences.length, 6)
+    const segDuration = totalDuration / maxSegs
+    sentences.slice(0, maxSegs).forEach((text, i) => {
+      captionData.push({
+        text: text.length > 80 ? text.slice(0, 77) + '...' : text,
+        time: i * segDuration,
+        duration: segDuration,
+      })
+    })
+  }
 
   // Caption style presets
   const captionPresets: Record<string, Record<string, string>> = {
@@ -522,11 +602,11 @@ async function renderViaCreatomate(
   }
   const capStyle = captionPresets[captionStyle] ?? captionPresets.bold
 
-  const captionElements = sentences.slice(0, maxSegs).map((text, i) => ({
+  const captionElements = captionData.map(cap => ({
     type: 'text',
-    text: text.length > 80 ? text.slice(0, 77) + '...' : text,
-    time: i * segDuration,
-    duration: segDuration,
+    text: cap.text,
+    time: cap.time,
+    duration: cap.duration,
     y: captionStyle === 'subtitle' ? '92%' : '85%',
     width: '90%',
     x_alignment: '50%',

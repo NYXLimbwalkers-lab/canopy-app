@@ -813,15 +813,27 @@ export default function ContentScreen() {
     if (!company || !script || !selectedVideoType) return;
     setGeneratingVideo(true);
     setScriptModal(false);
+    setCompositionModal(false);
     setVideoInvokeError(null);
     setVideoJobId(null);
 
     try {
-      // If user has uploaded clips, upload them to a temp staging path first
-      // so the edge function can find them when it runs processVideo()
+      // Build composition if we don't have one yet (auto-generate path)
+      const comp = composition ?? (scriptDisplay ? composeFromScript(
+        {
+          hook: scriptDisplay.hook,
+          script: scriptDisplay.body,
+          shotList: scriptDisplay.hashtags.map(t => t.replace('#', '')),
+          hashtags: scriptDisplay.hashtags,
+          caption: scriptDisplay.caption,
+        },
+        [],
+        company.name,
+      ) : null);
+
+      // Upload user clips if needed
       let clipPrefix: string | null = null;
       if (footageSource === 'upload' && uploadedClips.length > 0) {
-        // Use a temporary ID for staging — will be moved by the edge function
         clipPrefix = `staging-${Date.now()}`;
         await supabase.storage.createBucket('generated-videos', { public: true }).catch(() => {});
         for (let i = 0; i < uploadedClips.length; i++) {
@@ -846,9 +858,10 @@ export default function ContentScreen() {
           script,
           videoType: selectedVideoType,
           companyId: company.id,
-          captionStyle,
+          captionStyle: comp?.captionStyle ?? captionStyle,
           pacing: videoPacing,
-          clipPrefix, // Tell edge function where to find uploaded clips
+          clipPrefix,
+          composition: comp, // Send full composition to edge function
         },
       });
       if (error) throw error;
