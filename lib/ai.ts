@@ -386,10 +386,10 @@ ${selectedFacts.map((f, i) => `${i + 1}. ${f}`).join('\n')}
 
 ${details.what ? `Additional context: ${details.what}` : ''}
 
-Return JSON only — no markdown, no backticks:
+Return ONLY valid JSON — no markdown, no backticks, no extra text:
 {
-  "hook": "the first spoken line (scroll-stopper, under 10 words)",
-  "script": "the FULL spoken script including the hook — conversational, zero brackets, zero stage directions, just natural speech",
+  "hook": "the first spoken line only — scroll-stopper, under 10 words",
+  "script": "ONLY the words a person would say out loud. Start with the hook line, then the full script. NO labels like 'Hook:' or 'Script:'. NO hashtags. NO stage directions. NO brackets. NO 'Caption:'. Just pure conversational speech from start to finish, as if you're recording a voice memo. This text will be read aloud by text-to-speech so it must contain NOTHING except natural spoken words.",
   "shotList": ["shot 1 visual", "shot 2 visual", "shot 3 visual", "shot 4 visual", "shot 5 visual"],
   "hashtags": ["#tag1", "#tag2", "#tag3", "#tag4", "#tag5", "#tag6", "#tag7", "#tag8"],
   "caption": "platform caption under 150 chars with 1-2 emoji"
