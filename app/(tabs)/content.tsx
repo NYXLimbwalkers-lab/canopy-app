@@ -321,6 +321,34 @@ function VideoGenerateModal({ visible, videoId, invokeError, onClose, onPostToSo
       setStepIndex(i => (i < PROGRESS_STEPS.length - 1 ? i + 1 : i));
     }, 8000);
 
+    // Poll DB immediately (status may already be set since edge function now awaits processing)
+    const pollStatus = async () => {
+      const { data } = await supabase
+        .from('generated_videos')
+        .select('*')
+        .eq('id', videoId)
+        .single();
+      if (data && (data.status === 'ready' || data.status === 'failed')) {
+        setVideo(data as GeneratedVideo);
+        clearInterval(stepTimerRef.current!);
+        setStepIndex(PROGRESS_STEPS.length - 1);
+      }
+    };
+    pollStatus();
+
+    // Also poll every 15s as a fallback in case Realtime misses an update
+    const pollInterval = setInterval(pollStatus, 15000);
+
+    // Timeout: if still processing after 3 minutes, show as failed
+    const timeout = setTimeout(() => {
+      setVideo(prev => {
+        if (prev && (prev.status === 'ready' || prev.status === 'failed')) return prev;
+        return { id: videoId, status: 'failed', error_message: 'Video generation timed out. The render server may be unavailable — please try again.' } as GeneratedVideo;
+      });
+      clearInterval(stepTimerRef.current!);
+      setStepIndex(PROGRESS_STEPS.length - 1);
+    }, 180000);
+
     // Subscribe to Realtime updates on this video row
     const channel = supabase
       .channel(`video-${videoId}`)
@@ -332,6 +360,8 @@ function VideoGenerateModal({ visible, videoId, invokeError, onClose, onPostToSo
           setVideo(updated);
           if (updated.status === 'ready' || updated.status === 'failed') {
             clearInterval(stepTimerRef.current!);
+            clearInterval(pollInterval);
+            clearTimeout(timeout);
             setStepIndex(PROGRESS_STEPS.length - 1);
           }
         },
@@ -342,6 +372,8 @@ function VideoGenerateModal({ visible, videoId, invokeError, onClose, onPostToSo
 
     return () => {
       clearInterval(stepTimerRef.current!);
+      clearInterval(pollInterval);
+      clearTimeout(timeout);
       supabase.removeChannel(channel);
     };
   }, [visible, videoId]);

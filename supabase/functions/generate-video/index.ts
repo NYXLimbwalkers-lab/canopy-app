@@ -59,13 +59,18 @@ Deno.serve(async (req: Request) => {
 
     const videoId: string = videoRecord.id
 
-    // Fire-and-forget async processing — return videoId to client immediately
-    processVideo(supabase, videoId, script, videoType).catch(async (err: Error) => {
+    // Process video synchronously — Deno Deploy kills dangling promises after response
+    // The client shows a loading state while this runs (~10-15s for TTS + stock footage + render dispatch)
+    try {
+      await processVideo(supabase, videoId, script, videoType)
+    } catch (processErr: unknown) {
+      const msg = processErr instanceof Error ? processErr.message : 'Processing failed'
       await supabase
         .from('generated_videos')
-        .update({ status: 'failed', error_message: err.message })
+        .update({ status: 'failed', error_message: msg })
         .eq('id', videoId)
-    })
+      // Still return the videoId so the client can show the error via Realtime
+    }
 
     return new Response(JSON.stringify({ id: videoId }), {
       status: 200,
