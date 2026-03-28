@@ -5,6 +5,7 @@ import * as SplashScreen from 'expo-splash-screen';
 import { useAuthStore } from '@/lib/stores/authStore';
 import { isSupabaseConfigured } from '@/lib/supabase';
 import { registerForPushNotifications, setupNotificationListeners } from '@/lib/notifications';
+import { ToastProvider } from '@/components/ui/Toast';
 
 SplashScreen.preventAutoHideAsync();
 
@@ -62,12 +63,14 @@ export default function RootLayout() {
   }, [isInitialized, session, company]);
 
   return (
-    <Stack screenOptions={{ headerShown: false }}>
-      <Stack.Screen name="(tabs)" />
-      <Stack.Screen name="(auth)" />
-      <Stack.Screen name="(onboarding)" />
-      <Stack.Screen name="privacy" />
-      <Stack.Screen name="terms" />
-    </Stack>
+    <ToastProvider>
+      <Stack screenOptions={{ headerShown: false }}>
+        <Stack.Screen name="(tabs)" />
+        <Stack.Screen name="(auth)" />
+        <Stack.Screen name="(onboarding)" />
+        <Stack.Screen name="privacy" />
+        <Stack.Screen name="terms" />
+      </Stack>
+    </ToastProvider>
   );
 }

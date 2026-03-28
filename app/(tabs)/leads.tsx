@@ -21,6 +21,8 @@ import { EmptyState } from '@/components/ui/EmptyState';
 import { useAuthStore } from '@/lib/stores/authStore';
 import { supabase } from '@/lib/supabase';
 import { scoreAndSuggestFollowUp, isAIConfigured, aiChat } from '@/lib/ai';
+import { Toast } from '@/components/ui/Toast';
+import { HelpTip } from '@/components/ui/HelpTip';
 
 type LeadStatus = 'new' | 'contacted' | 'quoted' | 'booked' | 'lost';
 
@@ -205,6 +207,7 @@ function LeadDetailModal({
                     <Text style={detailStyles.aiBtnText}>🤖 Score & Follow-up</Text>
                   )}
                 </TouchableOpacity>
+                <HelpTip tip="AI analyzes the lead's service request, urgency, and details to give a score from 1-10. Higher scores mean more likely to convert." aiTip="Emergency calls and tree removals typically score highest." />
                 {lead.status === 'booked' && (
                   <TouchableOpacity
                     style={detailStyles.aiBtn}
@@ -392,8 +395,10 @@ export default function LeadsScreen() {
         setLeads(prev => prev.map(l => l.id === id ? { ...l, status: prevStatus } : l));
         setSelectedLead(prev => prev?.id === id ? { ...prev, status: prevStatus } : prev);
       }
+      Toast.error('Failed to update lead status.');
       return;
     }
+    Toast.success('Lead updated!');
 
     // When booked, generate review request
     if (status === 'booked' && isAIConfigured()) {
@@ -416,8 +421,9 @@ export default function LeadsScreen() {
       setLeads(prev => prev.map(l => l.id === lead.id ? { ...l, score: result.score } : l));
       setSelectedLead(prev => prev?.id === lead.id ? { ...prev, score: result.score } : prev);
       setAiResult({ leadId: lead.id, score: result.score, followUpMessage: result.followUpMessage });
+      Toast.success('Lead scored by AI!');
     } catch {
-      Alert.alert('Error', 'Failed to score lead. Please try again.');
+      Toast.error('AI scoring failed. Check your internet connection.');
     }
     setScoringId(null);
   };
@@ -442,7 +448,10 @@ export default function LeadsScreen() {
         setLeads(prev => [data, ...prev]);
         setShowAdd(false);
         setForm({ name: '', phone: '', email: '', service: '', source: 'phone', notes: '' });
+        Toast.success('Lead saved!');
       }
+    } catch {
+      Toast.error('Failed to save lead. Please try again.');
     } finally {
       setSubmitting(false);
     }

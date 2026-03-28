@@ -11,6 +11,7 @@ import { supabase } from '@/lib/supabase';
 import { router } from 'expo-router';
 import { WeatherWidget } from '@/components/WeatherWidget';
 import { generateDailyBriefing, isAIConfigured } from '@/lib/ai';
+import { Toast } from '@/components/ui/Toast';
 
 interface DashboardData {
   leadsToday: number;
@@ -69,8 +70,9 @@ export default function DashboardScreen() {
     setRefreshing(true);
     try {
       await fetchData();
-    } catch {}
-    finally {
+    } catch {
+      Toast.error('Failed to refresh. Check your connection.');
+    } finally {
       setRefreshing(false);
     }
   }, [fetchData]);
@@ -83,7 +85,10 @@ export default function DashboardScreen() {
         { leadsToday, adSpend }
       );
       setBriefing(text);
-    } catch {}
+      Toast.success('AI briefing ready!');
+    } catch {
+      Toast.error('AI briefing failed to generate.');
+    }
   }, [company]);
 
   useEffect(() => {
