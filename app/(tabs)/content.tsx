@@ -834,27 +834,18 @@ export default function ContentScreen() {
         company.name,
       ) : null);
 
-      // Upload user clips if needed
+      // Upload user clips to Supabase Storage before invoking edge function
       let clipPrefix: string | null = null;
       if (footageSource === 'upload' && uploadedClips.length > 0) {
-      // If user has uploaded clips, upload them to a temp staging path first
-      // so the edge function can find them when it runs processVideo()
-      let clipPrefix: string | null = null;
-      if (footageSource === 'upload' && uploadedClips.length > 0) {
-        // Use a temporary ID for staging — will be moved by the edge function
         clipPrefix = `staging-${Date.now()}`;
         await supabase.storage.createBucket('generated-videos', { public: true }).catch(() => {});
         for (let i = 0; i < uploadedClips.length; i++) {
-          const clip = uploadedClips[i];
           try {
-            const resp = await fetch(clip.uri);
+            const resp = await fetch(uploadedClips[i].uri);
             const blob = await resp.blob();
             await supabase.storage
               .from('generated-videos')
-              .upload(`${clipPrefix}/clips/clip_${i}.mp4`, blob, {
-                contentType: 'video/mp4',
-                upsert: true,
-              });
+              .upload(`${clipPrefix}/clips/clip_${i}.mp4`, blob, { contentType: 'video/mp4', upsert: true });
           } catch (uploadErr) {
             console.error('Clip upload failed:', uploadErr);
           }
@@ -869,10 +860,6 @@ export default function ContentScreen() {
           captionStyle: comp?.captionStyle ?? captionStyle,
           pacing: videoPacing,
           clipPrefix,
-          composition: comp, // Send full composition to edge function
-          captionStyle,
-          pacing: videoPacing,
-          clipPrefix, // Tell edge function where to find uploaded clips
         },
       });
       if (error) throw error;
