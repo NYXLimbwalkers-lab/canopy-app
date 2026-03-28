@@ -53,19 +53,13 @@ app.post('/render', requireApiKey, async (req, res) => {
   const jobDir = path.join(TMP, videoId);
   if (!fs.existsSync(jobDir)) fs.mkdirSync(jobDir, { recursive: true });
 
-  // Kill the job if it takes longer than 3 minutes (RAM safety)
-  const jobTimeout = setTimeout(() => {
-    console.error(`[${videoId}] Job timeout — killing after 3 minutes`);
-    process.exit(1); // Force restart — Render.com will restart the service
-  }, 180000);
-
   try {
     const supabase = createClient(supabaseUrl, supabaseKey);
     console.log(`[${videoId}] Starting render: ${videoClips?.length} clips, ${totalDuration}s, audio: ${!!audioUrl}`);
 
-    // Download all assets — limit clips to 2 max for 512MB RAM
+    // M4 Mac Mini has plenty of RAM — use all clips
     const downloads = [];
-    const clipsToUse = videoClips.slice(0, 2);
+    const clipsToUse = videoClips.slice(0, 6);
 
     // Download video clips
     const clipPaths = [];
@@ -143,10 +137,8 @@ app.post('/render', requireApiKey, async (req, res) => {
       }).catch(() => {});
     }
 
-    clearTimeout(jobTimeout);
     console.log(`[${videoId}] Render complete: ${publicUrl}`);
   } catch (err) {
-    clearTimeout(jobTimeout);
     console.error(`[${videoId}] Render failed:`, err.message);
 
     // Update DB with failure
@@ -216,14 +208,13 @@ function normalizeClip(input, output, duration) {
       .videoCodec('libx264')
       .audioCodec('aac')
       .outputOptions([
-        // Render at 360x640 to fit in 512MB RAM on Render.com free tier
-        '-vf', 'scale=360:640:force_original_aspect_ratio=decrease,pad=360:640:(ow-iw)/2:(oh-ih)/2:black,setsar=1',
-        '-r', '24',
+        // Full 1080x1920 on local M4 Mac Mini — plenty of power
+        '-vf', 'scale=1080:1920:force_original_aspect_ratio=decrease,pad=1080:1920:(ow-iw)/2:(oh-ih)/2:black,setsar=1',
+        '-r', '30',
         '-pix_fmt', 'yuv420p',
         '-an',  // Strip audio from clips — we use voiceover
-        '-preset', 'ultrafast',
-        '-crf', '28',
-        '-threads', '1',
+        '-preset', 'fast',
+        '-crf', '20',  // High quality
       ])
       .output(output)
       .on('end', resolve)
@@ -261,16 +252,16 @@ function composeFinal(videoPath, audioPath, captionSegments, watermarkText, tota
     const filters = [];
     let lastLabel = '0:v';
 
-    // Add watermark text (top-left) — font sizes scaled for 360x640
+    // Add watermark text (top-left) — full 1080p sizes
     if (watermarkText) {
       const escaped = watermarkText.replace(/'/g, "'\\''").replace(/:/g, '\\:');
       filters.push(
-        `[${lastLabel}]drawtext=text='${escaped}':fontsize=16:fontcolor=white@0.8:x=15:y=20:fontfile=/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf:borderw=1:bordercolor=black@0.5[wm]`
+        `[${lastLabel}]drawtext=text='${escaped}':fontsize=36:fontcolor=white@0.7:x=40:y=50:borderw=2:bordercolor=black@0.4[wm]`
       );
       lastLabel = 'wm';
     }
 
-    // Add caption segments (centered bottom) — font sizes scaled for 360x640
+    // Add caption segments (centered bottom) — full 1080p sizes
     if (captionSegments?.length) {
       captionSegments.forEach((seg, i) => {
         const escaped = seg.text.replace(/'/g, "'\\''").replace(/:/g, '\\:');
@@ -278,7 +269,7 @@ function composeFinal(videoPath, audioPath, captionSegments, watermarkText, tota
         const endTime = startTime + (seg.duration || 5);
         const outLabel = `cap${i}`;
         filters.push(
-          `[${lastLabel}]drawtext=text='${escaped}':fontsize=24:fontcolor=white:x=(w-text_w)/2:y=h-100:fontfile=/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf:borderw=2:bordercolor=black@0.7:enable='between(t,${startTime},${endTime})'[${outLabel}]`
+          `[${lastLabel}]drawtext=text='${escaped}':fontsize=56:fontcolor=white:x=(w-text_w)/2:y=h-250:borderw=4:bordercolor=black@0.8:enable='between(t,${startTime},${endTime})'[${outLabel}]`
         );
         lastLabel = outLabel;
       });
@@ -288,13 +279,12 @@ function composeFinal(videoPath, audioPath, captionSegments, watermarkText, tota
       cmd = cmd.complexFilter(filters, lastLabel);
     }
 
-    // Output settings — optimized for low-RAM environments (512MB)
+    // Output settings — full quality on M4 Mac Mini
     const outputOpts = [
-      '-preset', 'ultrafast',
-      '-crf', '28',
+      '-preset', 'fast',
+      '-crf', '20',
       '-pix_fmt', 'yuv420p',
       '-movflags', '+faststart',
-      '-threads', '1',
       `-t`, `${totalDuration || 30}`,
     ];
 
