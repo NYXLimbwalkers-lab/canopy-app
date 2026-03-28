@@ -238,82 +238,57 @@ function concatClips(concatFile, output) {
 
 function composeFinal(videoPath, audioPath, captionSegments, watermarkText, totalDuration, output) {
   return new Promise((resolve, reject) => {
-    let cmd = ffmpeg(videoPath);
+    const { execFile } = require('child_process');
 
-    // Trim to total duration
-    cmd = cmd.inputOptions([`-t ${totalDuration || 30}`]);
-
-    // Add audio input if available
-    if (audioPath) {
-      cmd = cmd.input(audioPath);
-    }
-
-    // Check if drawtext filter is available (requires libfreetype)
-    // On Mac Homebrew FFmpeg it's often missing — skip text overlays if so
-    const hasDrawtext = (() => {
-      try {
-        const { execSync } = require('child_process');
-        const out = execSync('ffmpeg -filters 2>&1', { encoding: 'utf-8' });
-        return out.includes('drawtext');
-      } catch { return false; }
-    })();
-
-    const filters = [];
+    // Build filter chain for captions + watermark
+    const filterParts = [];
     let lastLabel = '0:v';
 
-    if (hasDrawtext) {
-      // Add watermark text (top-left) — full 1080p sizes
-      if (watermarkText) {
-        const escaped = watermarkText.replace(/'/g, "'\\''").replace(/:/g, '\\:');
-        filters.push(
-          `[${lastLabel}]drawtext=text='${escaped}':fontsize=36:fontcolor=white@0.7:x=40:y=50:borderw=2:bordercolor=black@0.4[wm]`
-        );
-        lastLabel = 'wm';
-      }
+    if (watermarkText) {
+      const esc = watermarkText.replace(/'/g, '').replace(/\\/g, '');
+      filterParts.push(`[${lastLabel}]drawtext=text='${esc}':fontsize=36:fontcolor=white:x=40:y=50:borderw=2:bordercolor=black[wm]`);
+      lastLabel = 'wm';
+    }
 
-      // Add caption segments (centered bottom) — full 1080p sizes
-      if (captionSegments?.length) {
-        captionSegments.forEach((seg, i) => {
-          const escaped = seg.text.replace(/'/g, "'\\''").replace(/:/g, '\\:');
-          const startTime = seg.startTime || 0;
-          const endTime = startTime + (seg.duration || 5);
-          const outLabel = `cap${i}`;
-          filters.push(
-            `[${lastLabel}]drawtext=text='${escaped}':fontsize=56:fontcolor=white:x=(w-text_w)/2:y=h-250:borderw=4:bordercolor=black@0.8:enable='between(t,${startTime},${endTime})'[${outLabel}]`
-          );
-          lastLabel = outLabel;
-        });
-      }
+    if (captionSegments?.length) {
+      captionSegments.forEach((seg, i) => {
+        const esc = seg.text.replace(/'/g, '').replace(/\\/g, '');
+        const st = seg.startTime || 0;
+        const en = st + (seg.duration || 5);
+        const out = `cap${i}`;
+        filterParts.push(`[${lastLabel}]drawtext=text='${esc}':fontsize=56:fontcolor=white:x=(w-text_w)/2:y=h-250:borderw=4:bordercolor=black:enable='between(t,${st},${en})'[${out}]`);
+        lastLabel = out;
+      });
+    }
+
+    // Build FFmpeg args directly — avoids fluent-ffmpeg mangling filters
+    const args = ['-y', '-t', `${totalDuration || 30}`, '-i', videoPath];
+    if (audioPath) args.push('-i', audioPath);
+
+    if (filterParts.length > 0) {
+      args.push('-filter_complex', filterParts.join(';'));
+      args.push('-map', `[${lastLabel}]`);
+      if (audioPath) args.push('-map', '1:a', '-shortest');
     } else {
-      console.log('drawtext filter not available — rendering without burned-in captions');
+      if (audioPath) args.push('-map', '0:v', '-map', '1:a', '-shortest');
     }
 
-    if (filters.length > 0) {
-      cmd = cmd.complexFilter(filters, lastLabel);
-    }
+    args.push(
+      '-c:v', 'libx264', '-preset', 'fast', '-crf', '20',
+      '-pix_fmt', 'yuv420p', '-movflags', '+faststart',
+      '-t', `${totalDuration || 30}`,
+      output
+    );
 
-    // Output settings — full quality on M4 Mac Mini
-    const outputOpts = [
-      '-preset', 'fast',
-      '-crf', '20',
-      '-pix_fmt', 'yuv420p',
-      '-movflags', '+faststart',
-      `-t`, `${totalDuration || 30}`,
-    ];
-
-    if (audioPath) {
-      outputOpts.push('-map', `${filters.length > 0 ? `[${lastLabel}]` : '0:v'}`, '-map', '1:a', '-shortest');
-    } else if (filters.length > 0) {
-      outputOpts.push('-map', `[${lastLabel}]`);
-    }
-
-    cmd
-      .outputOptions(outputOpts)
-      .videoCodec('libx264')
-      .output(output)
-      .on('end', resolve)
-      .on('error', reject)
-      .run();
+    console.log(`[FFmpeg] Running: ffmpeg ${args.join(' ').substring(0, 200)}...`);
+    execFile('ffmpeg', args, { maxBuffer: 10 * 1024 * 1024 }, (err, stdout, stderr) => {
+      if (err) {
+        console.error('[FFmpeg stderr]', stderr?.substring(stderr.length - 500));
+        reject(new Error(`ffmpeg failed: ${err.message}`));
+      } else {
+        resolve();
+      }
+    });
   });
 }
 
