@@ -267,7 +267,6 @@ async function processVideo(
   let audioUrl: string | null = null
 
   // Ensure the storage bucket exists for audio uploads
-  await supabase.storage.createBucket('generated-videos', { public: true }).catch(() => {})
 
   // Try ElevenLabs first (premium quality voice)
   if (elevenLabsKey) {
