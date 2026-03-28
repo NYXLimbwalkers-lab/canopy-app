@@ -332,7 +332,7 @@ const VIDEO_TYPE_PROMPTS: Record<string, {
   },
   crane_job: {
     angles: [
-      'This oak was so big the only option was a 90-ton crane — watch this',
+      'This oak was so big the only option was a crane — watch this',
       'Why we spent $2,000 on a crane rental for one tree and it was worth every penny',
       'The setup nobody sees — rigging a crane removal takes longer than the actual cut',
       'When a tree is too close to the house for climbing — crane day',
@@ -340,7 +340,7 @@ const VIDEO_TYPE_PROMPTS: Record<string, {
       'The most expensive tree we ever craned out and what made it so complex',
     ],
     facts: [
-      'A 90-ton crane can lift a 5,000-pound tree section over a house with inch-level precision',
+      'A crane can lift a 5,000-pound tree section over a house with precision',
       'Crane removal is actually SAFER than climbing for trees near structures — fewer things can go wrong',
       'Crane rental costs $500-$2,000/day but can turn a 3-day climb job into a 4-hour operation',
       'The crane operator and the climber communicate with hand signals — one wrong move and it is a disaster',
