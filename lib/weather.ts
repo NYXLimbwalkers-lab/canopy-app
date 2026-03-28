@@ -94,10 +94,21 @@ function normalizeCityVariants(raw: string): string[] {
   return variants;
 }
 
+// Cache weather for 10 minutes so multiple loads show consistent data
+const weatherCache: { key: string; data: WeatherCondition; ts: number } | null = null;
+let _cache: typeof weatherCache = null;
+const CACHE_TTL = 10 * 60 * 1000; // 10 minutes
+
 /** Get current weather + storm status for a city */
 export async function getWeather(city: string, state?: string): Promise<WeatherCondition> {
   const key = getKey();
   if (!key) throw new Error('OpenWeatherMap key not configured');
+
+  // Return cached data if recent
+  const cacheKey = `${city}|${state}`;
+  if (_cache && _cache.key === cacheKey && Date.now() - _cache.ts < CACHE_TTL) {
+    return _cache.data;
+  }
 
   const stateCode = state && state.length === 2 ? state.toUpperCase() : null;
   const cityVariants = normalizeCityVariants(city);
@@ -120,7 +131,7 @@ export async function getWeather(city: string, state?: string): Promise<WeatherC
 
   if (!geoData.length) throw new Error(`City not found: ${city}`);
 
-  const { lat, lon } = geoData[0];
+  const { lat, lon, name: resolvedCity } = geoData[0];
 
   // Get full weather with alerts
   const weatherResp = await fetch(
@@ -130,7 +141,7 @@ export async function getWeather(city: string, state?: string): Promise<WeatherC
 
   const storm = classifyStorm(w.weather ?? [], w.wind ?? {}, []);
 
-  return {
+  const result: WeatherCondition = {
     description: w.weather?.[0]?.description ?? 'Clear',
     icon: w.weather?.[0]?.icon ?? '01d',
     temp: Math.round(w.main?.temp ?? 70),
@@ -138,9 +149,14 @@ export async function getWeather(city: string, state?: string): Promise<WeatherC
     windGust: w.wind?.gust ? Math.round(w.wind.gust) : undefined,
     humidity: w.main?.humidity ?? 50,
     visibility: Math.round((w.visibility ?? 10000) / 1000),
-    city,
+    city: resolvedCity || city, // Use OpenWeather's resolved city name for consistency
     ...storm,
   };
+
+  // Cache the result
+  _cache = { key: cacheKey, data: result, ts: Date.now() };
+
+  return result;
 }
 
 /** Get 5-day forecast to pre-plan content */
