@@ -12,6 +12,7 @@ import {
   Share,
   KeyboardAvoidingView,
   Platform,
+  TextInput,
 } from 'react-native';
 import { Input } from '@/components/ui/Input';
 import { Theme } from '@/constants/Theme';
@@ -1329,16 +1330,35 @@ export default function ContentScreen() {
 
                 {scriptDisplay ? (
                   <>
-                    {/* Hook — displayed prominently */}
+                    {/* Hook — editable */}
                     <View style={sm.hookBox}>
-                      <Text style={sm.hookLabel}>HOOK</Text>
-                      <Text style={sm.hookText}>{scriptDisplay.hook}</Text>
+                      <Text style={sm.hookLabel}>HOOK · tap to edit</Text>
+                      <TextInput
+                        style={sm.hookText}
+                        value={scriptDisplay.hook}
+                        onChangeText={(text) => {
+                          setScriptDisplay(prev => prev ? { ...prev, hook: text } : prev);
+                        }}
+                        multiline
+                        placeholder="Enter hook line..."
+                        placeholderTextColor="#666"
+                      />
                     </View>
 
-                    {/* Spoken script body */}
+                    {/* Spoken script body — editable */}
                     <View style={sm.scriptBox}>
-                      <Text style={sm.scriptBoxLabel}>SCRIPT</Text>
-                      <Text style={sm.scriptText}>{scriptDisplay.body}</Text>
+                      <Text style={sm.scriptBoxLabel}>SCRIPT · tap to edit</Text>
+                      <TextInput
+                        style={[sm.scriptText, { minHeight: 120 }]}
+                        value={scriptDisplay.body}
+                        onChangeText={(text) => {
+                          setScriptDisplay(prev => prev ? { ...prev, body: text } : prev);
+                          setScript(text); // Update the clean script used for TTS
+                        }}
+                        multiline
+                        placeholder="Enter script..."
+                        placeholderTextColor="#666"
+                      />
                     </View>
 
                     {/* Hashtags */}
@@ -1352,13 +1372,20 @@ export default function ContentScreen() {
                       </View>
                     )}
 
-                    {/* Caption */}
-                    {scriptDisplay.caption ? (
-                      <View style={sm.captionBox}>
-                        <Text style={sm.captionLabel}>CAPTION</Text>
-                        <Text style={sm.captionText}>{scriptDisplay.caption}</Text>
-                      </View>
-                    ) : null}
+                    {/* Caption — editable */}
+                    <View style={sm.captionBox}>
+                      <Text style={sm.captionLabel}>CAPTION · tap to edit</Text>
+                      <TextInput
+                        style={sm.captionText}
+                        value={scriptDisplay.caption}
+                        onChangeText={(text) => {
+                          setScriptDisplay(prev => prev ? { ...prev, caption: text } : prev);
+                        }}
+                        multiline
+                        placeholder="Enter caption..."
+                        placeholderTextColor="#666"
+                      />
+                    </View>
                   </>
                 ) : (
                   <View style={sm.scriptBox}>
