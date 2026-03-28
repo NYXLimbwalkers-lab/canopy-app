@@ -25,19 +25,20 @@ const corsHeaders = {
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
 }
 
-const VIDEO_TYPE_SEARCH: Record<string, string> = {
-  satisfying_removal: 'tree removal chainsaw',
-  before_after:       'tree trimming garden transformation',
-  did_you_know:       'forest trees nature',
-  day_in_life:        'arborist tree climbing worker',
-  price_transparency: 'tree service yard work estimate',
-  storm_damage:       'storm damage fallen tree hurricane',
-  crane_job:          'crane heavy lifting construction',
-  stump_grinding:     'stump removal grinding wood chips',
-  tree_health_tip:    'tree bark leaves nature closeup',
-  crew_spotlight:     'construction worker team outdoor',
-  equipment_tour:     'chainsaw tools equipment workshop',
-  seasonal_reminder:  'autumn leaves spring garden season',
+// Multiple search queries per type — picks randomly for variety
+const VIDEO_TYPE_SEARCH: Record<string, string[]> = {
+  satisfying_removal: ['tree cutting chainsaw lumber', 'tree falling timber', 'lumberjack cutting tree forest'],
+  before_after:       ['overgrown yard garden cleanup', 'landscaping backyard transformation', 'tree trimming garden beautiful'],
+  did_you_know:       ['tree roots forest closeup', 'oak tree bark texture nature', 'tree canopy sunlight leaves'],
+  day_in_life:        ['lumberjack working forest', 'tree climbing rope harness', 'outdoor worker morning sunrise'],
+  price_transparency: ['contractor talking customer outdoor', 'writing estimate clipboard outdoor', 'home improvement yard work'],
+  storm_damage:       ['fallen tree storm damage', 'storm aftermath broken tree house', 'wind damage neighborhood trees'],
+  crane_job:          ['crane lifting logs heavy', 'crane construction trees', 'heavy equipment outdoor work'],
+  stump_grinding:     ['wood chips flying machine', 'tree stump ground forest', 'sawdust wood cutting closeup'],
+  tree_health_tip:    ['tree bark fungus mushroom', 'dead tree leaves falling', 'arborist inspecting tree branches'],
+  crew_spotlight:     ['workers outdoor team high five', 'hard hat safety vest crew', 'landscaping crew truck morning'],
+  equipment_tour:     ['chainsaw closeup sharp blade', 'truck loaded equipment outdoor', 'power tools workshop garage'],
+  seasonal_reminder:  ['autumn leaves falling golden', 'spring garden blooming trees', 'winter snow branches tree'],
 }
 
 Deno.serve(async (req: Request) => {
@@ -226,7 +227,8 @@ function extractVisualKeywords(script: string, videoType: string): string {
 
   // Return the best match or a contextual default
   if (matches.length > 0) return matches[0]
-  return VIDEO_TYPE_SEARCH[videoType] ?? 'tree service outdoor work'
+  const typeQueries = VIDEO_TYPE_SEARCH[videoType] ?? ['tree service arborist outdoor work']
+  return typeQueries[Math.floor(Math.random() * typeQueries.length)]
 }
 
 async function processVideo(
@@ -271,8 +273,10 @@ async function processVideo(
   // Try ElevenLabs first (premium quality voice)
   if (elevenLabsKey) {
     try {
-      // Fetch available voices from the user's account and pick one at random
-      let voiceId = 'TxGEqnHWrfWFTfGW9XjX' // default fallback voice
+      // Use a specific high-quality male voice for tree service content
+      // 'Josh' — deep, natural, conversational American male (great for blue-collar content)
+      // Fallback: 'Adam' — another natural male voice
+      let voiceId = 'TxGEqnHWrfWFTfGW9XjX' // Josh (default)
       try {
         const voicesResp = await fetchWithTimeout('https://api.elevenlabs.io/v1/voices', {
           headers: { 'xi-api-key': elevenLabsKey },
@@ -280,10 +284,13 @@ async function processVideo(
         if (voicesResp.ok) {
           const voicesData = await voicesResp.json()
           const voices = voicesData.voices ?? []
-          if (voices.length > 0) {
-            const randomVoice = voices[Math.floor(Math.random() * voices.length)]
-            voiceId = randomVoice.voice_id
-          }
+          // Prefer male voices with 'conversational' or 'narration' use case
+          const goodVoice = voices.find((v: any) =>
+            v.labels?.gender === 'male' && v.labels?.use_case?.includes('narrat')
+          ) ?? voices.find((v: any) =>
+            v.labels?.gender === 'male'
+          ) ?? voices[0]
+          if (goodVoice) voiceId = goodVoice.voice_id
         }
       } catch {}
 
@@ -296,10 +303,10 @@ async function processVideo(
             text: spokenText,
             model_id: 'eleven_multilingual_v2',
             voice_settings: {
-              stability: 0.4,          // Slightly more stable for professional feel
-              similarity_boost: 0.75,   // Higher voice fidelity
-              style: 0.2,              // Natural conversational style
-              use_speaker_boost: true,  // Enhanced clarity
+              stability: 0.5,           // Balanced — not robotic, not too varied
+              similarity_boost: 0.8,    // High voice fidelity
+              style: 0.35,             // More expressive conversational style
+              use_speaker_boost: true,  // Enhanced clarity for mobile speakers
             },
           }),
         },
@@ -381,7 +388,7 @@ async function processVideo(
     // Search with multiple queries for variety
     const queries = [
       scriptKeywords,
-      VIDEO_TYPE_SEARCH[videoType] ?? 'tree service arborist',
+      (VIDEO_TYPE_SEARCH[videoType] ?? ['tree service arborist'])[Math.floor(Math.random() * (VIDEO_TYPE_SEARCH[videoType]?.length ?? 1))],
     ]
 
     for (const query of queries) {
@@ -774,7 +781,7 @@ async function renderViaSelfHosted(
   const maxSegs = Math.min(sentences.length, 6)
   const segDuration = totalDuration / maxSegs
   const captionSegments = sentences.slice(0, maxSegs).map((text, i) => ({
-    text: text.length > 80 ? text.slice(0, 77) + '...' : text,
+    text: text.length > 40 ? text.slice(0, 37) + '...' : text,
     startTime: i * segDuration,
     duration: segDuration,
   }))

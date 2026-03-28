@@ -55,7 +55,12 @@ app.post('/render', requireApiKey, async (req, res) => {
 
   try {
     const supabase = createClient(supabaseUrl, supabaseKey);
-    console.log(`[${videoId}] Starting render: ${videoClips?.length} clips, ${totalDuration}s, audio: ${!!audioUrl}`);
+    const progress = async (step, pct) => {
+      try { await supabase.from('generated_videos').update({ progress_step: step, progress_percent: pct }).eq('id', videoId); } catch {}
+      console.log(`[${videoId}] ${step} (${pct}%)`);
+    };
+
+    await progress('Downloading footage clips...', 55);
 
     // M4 Mac Mini has plenty of RAM — use all clips
     const downloads = [];
@@ -77,6 +82,7 @@ app.post('/render', requireApiKey, async (req, res) => {
     }
 
     await Promise.all(downloads);
+    await progress('Processing video clips...', 65);
 
     // Step 1: Normalize all clips to same resolution/format and trim to equal duration
     const clipDuration = Math.max(3, Math.floor((totalDuration || 30) / clipPaths.length));
@@ -97,10 +103,12 @@ app.post('/render', requireApiKey, async (req, res) => {
     const concatOutput = path.join(jobDir, 'concat.mp4');
     await concatClips(concatFile, concatOutput);
 
+    await progress('Adding captions and watermark...', 75);
     // Step 4: Build FFmpeg filter for captions + watermark + audio
     const finalOutput = path.join(jobDir, `final_${videoId}.mp4`);
     await composeFinal(concatOutput, audioPath, captionSegments, watermarkText, totalDuration, finalOutput);
 
+    await progress('Uploading final video...', 90);
     // Step 5: Upload to Supabase Storage
     const fileBuffer = fs.readFileSync(finalOutput);
     const storagePath = `videos/${videoId}.mp4`;
@@ -252,11 +260,13 @@ function composeFinal(videoPath, audioPath, captionSegments, watermarkText, tota
 
     if (captionSegments?.length) {
       captionSegments.forEach((seg, i) => {
-        const esc = seg.text.replace(/'/g, '').replace(/\\/g, '');
+        // Truncate to ~40 chars to prevent running off screen
+        let text = seg.text.replace(/'/g, '').replace(/\\/g, '');
+        if (text.length > 40) text = text.substring(0, 37) + '...';
         const st = seg.startTime || 0;
         const en = st + (seg.duration || 5);
         const out = `cap${i}`;
-        filterParts.push(`[${lastLabel}]drawtext=text='${esc}':fontsize=56:fontcolor=white:x=(w-text_w)/2:y=h-250:borderw=4:bordercolor=black:enable='between(t,${st},${en})'[${out}]`);
+        filterParts.push(`[${lastLabel}]drawtext=text='${text}':fontsize=48:fontcolor=white:x=(w-text_w)/2:y=h-300:borderw=3:bordercolor=black:enable='between(t,${st},${en})'[${out}]`);
         lastLabel = out;
       });
     }
