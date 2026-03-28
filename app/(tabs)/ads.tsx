@@ -236,7 +236,7 @@ function LSASetupGuide({
               label="Open Google LSA Signup"
               onPress={onOpenSignup}
               size="lg"
-              variant="outline"
+              variant="secondary"
             />
             <Text style={styles.lsaSignupNote}>
               Complete the checklist above, then sign in to connect
