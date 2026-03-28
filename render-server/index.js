@@ -214,7 +214,7 @@ function normalizeClip(input, output, duration) {
         '-pix_fmt', 'yuv420p',
         '-an',  // Strip audio from clips — we use voiceover
         '-preset', 'fast',
-        '-crf', '20',  // High quality
+        '-crf', '26',  // Good quality, keeps file under 50MB for Supabase
       ])
       .output(output)
       .on('end', resolve)
@@ -274,7 +274,7 @@ function composeFinal(videoPath, audioPath, captionSegments, watermarkText, tota
     }
 
     args.push(
-      '-c:v', 'libx264', '-preset', 'fast', '-crf', '20',
+      '-c:v', 'libx264', '-preset', 'fast', '-crf', '26', '-b:v', '2M', '-maxrate', '3M', '-bufsize', '4M',
       '-pix_fmt', 'yuv420p', '-movflags', '+faststart',
       '-t', `${totalDuration || 30}`,
       output

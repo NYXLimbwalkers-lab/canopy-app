@@ -814,11 +814,13 @@ export default function ContentScreen() {
   // ── AI video generation ────────────────────────────────────────────────────
   const generateVideo = async () => {
     if (!company || !script || !selectedVideoType) return;
-    setGeneratingVideo(true);
+    // Show the progress modal IMMEDIATELY — don't wait for async work
     setScriptModal(false);
     setCompositionModal(false);
     setVideoInvokeError(null);
     setVideoJobId(null);
+    setVideoModal(true);
+    setGeneratingVideo(true);
 
     try {
       // Build composition if we don't have one yet (auto-generate path)
@@ -872,7 +874,6 @@ export default function ContentScreen() {
       );
     } finally {
       setGeneratingVideo(false);
-      setVideoModal(true);
     }
   };
 
