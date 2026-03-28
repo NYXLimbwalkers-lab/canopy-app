@@ -102,6 +102,65 @@ function cleanScriptForTTS(raw: string): string {
     .trim()
 }
 
+// Split text into chunks of ~200 chars at sentence boundaries for Google Translate TTS
+function splitTextForGoogleTTS(text: string, maxLen = 190): string[] {
+  const sentences = text.split(/(?<=[.!?,;])\s+/)
+  const chunks: string[] = []
+  let current = ''
+
+  for (const sentence of sentences) {
+    if (current.length + sentence.length + 1 > maxLen) {
+      if (current) chunks.push(current.trim())
+      // If a single sentence exceeds maxLen, split it by words
+      if (sentence.length > maxLen) {
+        const words = sentence.split(/\s+/)
+        let wordChunk = ''
+        for (const word of words) {
+          if (wordChunk.length + word.length + 1 > maxLen) {
+            if (wordChunk) chunks.push(wordChunk.trim())
+            wordChunk = word
+          } else {
+            wordChunk += (wordChunk ? ' ' : '') + word
+          }
+        }
+        if (wordChunk) current = wordChunk
+      } else {
+        current = sentence
+      }
+    } else {
+      current += (current ? ' ' : '') + sentence
+    }
+  }
+  if (current.trim()) chunks.push(current.trim())
+  return chunks.length > 0 ? chunks : [text.slice(0, maxLen)]
+}
+
+// Upload audio buffer to Supabase Storage and return the public URL
+async function uploadAudioToStorage(
+  supabase: ReturnType<typeof createClient>,
+  videoId: string,
+  audioBuffer: ArrayBuffer,
+): Promise<string | null> {
+  const filePath = `${videoId}/voiceover.mp3`
+  const { error } = await supabase.storage
+    .from('generated-videos')
+    .upload(filePath, audioBuffer, {
+      contentType: 'audio/mpeg',
+      upsert: true,
+    })
+
+  if (error) {
+    console.error('Audio upload failed:', error.message)
+    return null
+  }
+
+  const { data: urlData } = supabase.storage
+    .from('generated-videos')
+    .getPublicUrl(filePath)
+
+  return urlData?.publicUrl ?? null
+}
+
 async function processVideo(
   supabase: ReturnType<typeof createClient>,
   videoId: string,
@@ -132,9 +191,13 @@ async function processVideo(
 
   const spokenText = cleanScriptForTTS(script)
 
-  // ── Step 1: ElevenLabs voiceover ──────────────────────────────────────────
+  // ── Step 1: Generate voiceover audio ─────────────────────────────────────
   let audioUrl: string | null = null
 
+  // Ensure the storage bucket exists for audio uploads
+  await supabase.storage.createBucket('generated-videos', { public: true }).catch(() => {})
+
+  // Try ElevenLabs first (premium quality voice)
   if (elevenLabsKey) {
     try {
       const ttsResp = await fetch(
@@ -145,39 +208,44 @@ async function processVideo(
           body: JSON.stringify({
             text: spokenText,
             model_id: 'eleven_multilingual_v2',
-            voice_settings: {
-              stability: 0.35,
-              similarity_boost: 0.6,
-              style: 0.15,
-              use_speaker_boost: true,
-            },
+            voice_settings: { stability: 0.35, similarity_boost: 0.6, style: 0.15, use_speaker_boost: true },
           }),
         },
       )
-
       if (ttsResp.ok) {
-        const audioBuffer = await ttsResp.arrayBuffer()
+        audioUrl = await uploadAudioToStorage(supabase, videoId, await ttsResp.arrayBuffer())
+      }
+    } catch {}
+  }
 
-        // Ensure the storage bucket exists
-        await supabase.storage.createBucket('generated-videos', { public: true }).catch(() => {})
+  // Fallback: Google Translate TTS (free, no API key needed)
+  if (!audioUrl) {
+    try {
+      // Google TTS has a ~200 char limit per request — split into chunks
+      const chunks = splitTextForGoogleTTS(spokenText)
+      const audioChunks: ArrayBuffer[] = []
 
-        const { error: uploadError } = await supabase.storage
-          .from('generated-videos')
-          .upload(`audio/${videoId}.mp3`, new Uint8Array(audioBuffer), {
-            contentType: 'audio/mpeg',
-            upsert: true,
-          })
-
-        if (!uploadError) {
-          const { data: { publicUrl } } = supabase.storage
-            .from('generated-videos')
-            .getPublicUrl(`audio/${videoId}.mp3`)
-          audioUrl = publicUrl
+      for (const chunk of chunks) {
+        const gResp = await fetch(
+          `https://translate.google.com/translate_tts?ie=UTF-8&client=tw-ob&tl=en&q=${encodeURIComponent(chunk)}`,
+        )
+        if (gResp.ok) {
+          audioChunks.push(await gResp.arrayBuffer())
         }
       }
-    } catch {
-      // ElevenLabs failed — Creatomate TTS fallback will be used in the render step
-    }
+
+      if (audioChunks.length > 0) {
+        // Concatenate all audio chunks into one buffer
+        const totalLen = audioChunks.reduce((sum, buf) => sum + buf.byteLength, 0)
+        const merged = new Uint8Array(totalLen)
+        let offset = 0
+        for (const buf of audioChunks) {
+          merged.set(new Uint8Array(buf), offset)
+          offset += buf.byteLength
+        }
+        audioUrl = await uploadAudioToStorage(supabase, videoId, merged.buffer)
+      }
+    } catch {}
   }
 
   // ── Step 2: Pexels stock footage ──────────────────────────────────────────
@@ -295,7 +363,7 @@ async function renderViaCreatomate(
     ...captionElements,
   ]
 
-  // Add audio track — use ElevenLabs URL if available, otherwise Creatomate built-in TTS
+  // Add audio track if we have a voiceover URL
   if (audioUrl) {
     elements.push({
       type: 'audio',
@@ -303,16 +371,8 @@ async function renderViaCreatomate(
       time: 0,
       duration: totalDuration,
     })
-  } else {
-    // Fallback: Creatomate's built-in text-to-speech
-    elements.push({
-      type: 'audio',
-      text: spokenText,
-      voice: 'Matthew',  // Creatomate built-in voice
-      time: 0,
-      duration: totalDuration,
-    })
   }
+  // No fallback — Creatomate doesn't support built-in TTS on audio elements
 
   const source = {
     output_format: 'mp4',
