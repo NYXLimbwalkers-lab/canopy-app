@@ -655,6 +655,10 @@ export default function ContentScreen() {
   // Render style options
   const [captionStyle,      setCaptionStyle]      = useState<'bold' | 'minimal' | 'subtitle'>('bold');
   const [videoPacing,       setVideoPacing]       = useState<'fast' | 'medium' | 'slow'>('medium');
+  // Footage options
+  const [footageSource,     setFootageSource]     = useState<'stock' | 'upload'>('stock');
+  const [uploadedClips,     setUploadedClips]     = useState<{ name: string; uri: string }[]>([]);
+  const [uploadingClips,    setUploadingClips]    = useState(false);
 
   // Post to Social modal state
   const [postSocialModal,   setPostSocialModal]   = useState(false);
@@ -746,6 +750,30 @@ export default function ContentScreen() {
     }
   };
 
+  // ── Upload video clips ─────────────────────────────────────────────────────
+  const handleUploadClips = async () => {
+    if (Platform.OS !== 'web') return;
+    // Create file input for web
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = 'video/mp4,video/quicktime,video/webm';
+    input.multiple = true;
+    input.onchange = async () => {
+      const files = input.files;
+      if (!files || files.length === 0) return;
+      setUploadingClips(true);
+      const newClips: { name: string; uri: string }[] = [];
+      for (let i = 0; i < Math.min(files.length, 4); i++) {
+        const file = files[i];
+        if (file.size > 50 * 1024 * 1024) continue; // skip files > 50MB
+        newClips.push({ name: file.name, uri: URL.createObjectURL(file) });
+      }
+      setUploadedClips(prev => [...prev, ...newClips].slice(0, 4));
+      setUploadingClips(false);
+    };
+    input.click();
+  };
+
   // ── AI video generation ────────────────────────────────────────────────────
   const generateVideo = async () => {
     if (!company || !script || !selectedVideoType) return;
@@ -755,6 +783,7 @@ export default function ContentScreen() {
     setVideoJobId(null);
 
     try {
+      // First invoke to create the DB record
       const { data, error } = await supabase.functions.invoke('generate-video', {
         body: {
           script,
@@ -762,10 +791,31 @@ export default function ContentScreen() {
           companyId: company.id,
           captionStyle,
           pacing: videoPacing,
+          hasUserClips: footageSource === 'upload' && uploadedClips.length > 0,
         },
       });
       if (error) throw error;
-      setVideoJobId(data?.id ?? null);
+      const videoId = data?.id;
+      setVideoJobId(videoId ?? null);
+
+      // Upload user clips to Supabase storage if they selected "My Clips"
+      if (videoId && footageSource === 'upload' && uploadedClips.length > 0) {
+        for (let i = 0; i < uploadedClips.length; i++) {
+          const clip = uploadedClips[i];
+          try {
+            const resp = await fetch(clip.uri);
+            const blob = await resp.blob();
+            await supabase.storage
+              .from('generated-videos')
+              .upload(`${videoId}/clips/clip_${i}.mp4`, blob, {
+                contentType: 'video/mp4',
+                upsert: true,
+              });
+          } catch (uploadErr) {
+            console.error('Clip upload failed:', uploadErr);
+          }
+        }
+      }
     } catch (err: any) {
       setVideoInvokeError(
         err?.message?.includes('Failed to send')
@@ -1294,6 +1344,56 @@ export default function ContentScreen() {
                     </View>
                   </View>
 
+                  {/* Footage source */}
+                  <Text style={sm.makeVideoLabel}>FOOTAGE</Text>
+                  <View style={sm.styleRow}>
+                    <Text style={sm.styleLabel}>Source</Text>
+                    <View style={sm.stylePills}>
+                      {([
+                        { key: 'stock', label: 'AI Stock' },
+                        { key: 'upload', label: 'My Clips' },
+                      ] as const).map(f => (
+                        <TouchableOpacity
+                          key={f.key}
+                          style={[sm.stylePill, footageSource === f.key && sm.stylePillActive]}
+                          onPress={() => setFootageSource(f.key)}
+                          activeOpacity={0.8}
+                        >
+                          <Text style={[sm.stylePillText, footageSource === f.key && sm.stylePillTextActive]}>{f.label}</Text>
+                        </TouchableOpacity>
+                      ))}
+                    </View>
+                  </View>
+
+                  {footageSource === 'upload' && (
+                    <View style={sm.uploadSection}>
+                      {uploadedClips.length > 0 ? (
+                        <View style={sm.uploadedList}>
+                          {uploadedClips.map((clip, i) => (
+                            <View key={i} style={sm.uploadedClip}>
+                              <Text style={sm.uploadedClipIcon}>🎥</Text>
+                              <Text style={sm.uploadedClipName} numberOfLines={1}>{clip.name}</Text>
+                              <TouchableOpacity onPress={() => setUploadedClips(prev => prev.filter((_, j) => j !== i))}>
+                                <Text style={sm.uploadedClipRemove}>✕</Text>
+                              </TouchableOpacity>
+                            </View>
+                          ))}
+                        </View>
+                      ) : null}
+                      <TouchableOpacity
+                        style={sm.uploadBtn}
+                        onPress={handleUploadClips}
+                        activeOpacity={0.85}
+                      >
+                        <Text style={sm.uploadBtnIcon}>+</Text>
+                        <Text style={sm.uploadBtnText}>
+                          {uploadingClips ? 'Uploading...' : 'Upload Video Clips'}
+                        </Text>
+                      </TouchableOpacity>
+                      <Text style={sm.uploadHint}>Upload 1-4 of your own clips. MP4, MOV, under 50MB each.</Text>
+                    </View>
+                  )}
+
                   <Text style={sm.makeVideoLabel}>MAKE THIS VIDEO</Text>
 
                   {/* Film yourself option */}
@@ -1330,10 +1430,12 @@ export default function ContentScreen() {
                       )}
                       <View>
                         <Text style={[sm.filmBtnTitle, { color: '#FFFFFF' }]}>
-                          {generatingVideo ? 'Starting…' : 'Auto-Generate AI Video'}
+                          {generatingVideo ? 'Starting...' : 'Auto-Generate AI Video'}
                         </Text>
                         <Text style={[sm.filmBtnSubtitle, { color: 'rgba(255,255,255,0.6)' }]}>
-                          ElevenLabs · Pexels · Creatomate
+                          {footageSource === 'upload' && uploadedClips.length > 0
+                            ? `Your clips · AI voice · captions`
+                            : 'AI stock footage · AI voice · captions'}
                         </Text>
                       </View>
                     </View>
@@ -1698,6 +1800,17 @@ const sm = StyleSheet.create({
   stylePillActive:     { backgroundColor: D.green + '25', borderColor: D.green },
   stylePillText:       { fontSize: 12, color: D.textSec, fontWeight: '600' as const },
   stylePillTextActive: { color: D.green },
+
+  uploadSection:       { gap: 8 },
+  uploadedList:        { gap: 6 },
+  uploadedClip:        { flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: D.surfaceAlt, borderRadius: Theme.radius.md, padding: 10, borderWidth: 1, borderColor: D.border },
+  uploadedClipIcon:    { fontSize: 16 },
+  uploadedClipName:    { flex: 1, fontSize: 13, color: D.text },
+  uploadedClipRemove:  { fontSize: 16, color: '#F87171', fontWeight: '700' as const, paddingHorizontal: 6 },
+  uploadBtn:           { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, backgroundColor: D.surfaceAlt, borderRadius: Theme.radius.lg, padding: 14, borderWidth: 1.5, borderColor: D.green + '60', borderStyle: 'dashed' as const },
+  uploadBtnIcon:       { fontSize: 20, color: D.green, fontWeight: '700' as const },
+  uploadBtnText:       { fontSize: 14, color: D.green, fontWeight: '600' as const },
+  uploadHint:          { fontSize: 11, color: D.textSec + '80', textAlign: 'center' as const },
 });
 
 // ─── Post to Social modal styles ─────────────────────────────────────────────
