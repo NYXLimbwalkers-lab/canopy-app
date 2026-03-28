@@ -51,7 +51,7 @@ Deno.serve(async (req: Request) => {
   )
 
   try {
-    const { script, videoType, companyId, captionStyle, pacing } = await req.json()
+    const { script, videoType, companyId, captionStyle, pacing, clipPrefix } = await req.json()
 
     if (!script || !videoType || !companyId) {
       return new Response(JSON.stringify({ error: 'Missing script, videoType, or companyId' }), {
@@ -78,7 +78,7 @@ Deno.serve(async (req: Request) => {
 
     // Process video synchronously — Deno Deploy kills dangling promises after response
     try {
-      await processVideo(supabase, videoId, script, videoType, renderCaptionStyle, renderPacing)
+      await processVideo(supabase, videoId, script, videoType, renderCaptionStyle, renderPacing, clipPrefix)
     } catch (processErr: unknown) {
       const msg = processErr instanceof Error ? processErr.message : 'Processing failed'
       await supabase
@@ -229,6 +229,7 @@ async function processVideo(
   videoType: string,
   captionStyle: string = 'bold',
   pacing: string = 'medium',
+  clipPrefix: string | null = null,
 ) {
   const elevenLabsKey   = Deno.env.get('ELEVENLABS_API_KEY')
   const pexelsKey       = Deno.env.get('PEXELS_API_KEY')
@@ -341,17 +342,20 @@ async function processVideo(
 
   // ── Step 2: Pexels stock footage (smart multi-query search) ──────────────
   const videoClips: string[] = []
-  // Also check for user-uploaded footage clips
+
+  // Check for user-uploaded footage clips (either at clipPrefix or videoId path)
+  const clipPath = clipPrefix ? `${clipPrefix}/clips` : `${videoId}/clips`
   const { data: userClips } = await supabase.storage
     .from('generated-videos')
-    .list(`${videoId}/clips`, { limit: 10 })
+    .list(clipPath, { limit: 10 })
   if (userClips && userClips.length > 0) {
-    for (const clip of userClips) {
+    for (const clip of userClips.filter(c => c.name.endsWith('.mp4'))) {
       const { data: urlData } = supabase.storage
         .from('generated-videos')
-        .getPublicUrl(`${videoId}/clips/${clip.name}`)
+        .getPublicUrl(`${clipPath}/${clip.name}`)
       if (urlData?.publicUrl) videoClips.push(urlData.publicUrl)
     }
+    console.log(`[${videoId}] Found ${videoClips.length} user-uploaded clips`)
   }
 
   if (pexelsKey && videoClips.length === 0) {
