@@ -813,10 +813,27 @@ export default function ContentScreen() {
     if (!company || !script || !selectedVideoType) return;
     setGeneratingVideo(true);
     setScriptModal(false);
+    setCompositionModal(false);
     setVideoInvokeError(null);
     setVideoJobId(null);
 
     try {
+      // Build composition if we don't have one yet (auto-generate path)
+      const comp = composition ?? (scriptDisplay ? composeFromScript(
+        {
+          hook: scriptDisplay.hook,
+          script: scriptDisplay.body,
+          shotList: scriptDisplay.hashtags.map(t => t.replace('#', '')),
+          hashtags: scriptDisplay.hashtags,
+          caption: scriptDisplay.caption,
+        },
+        [],
+        company.name,
+      ) : null);
+
+      // Upload user clips if needed
+      let clipPrefix: string | null = null;
+      if (footageSource === 'upload' && uploadedClips.length > 0) {
       // If user has uploaded clips, upload them to a temp staging path first
       // so the edge function can find them when it runs processVideo()
       let clipPrefix: string | null = null;
@@ -846,6 +863,10 @@ export default function ContentScreen() {
           script,
           videoType: selectedVideoType,
           companyId: company.id,
+          captionStyle: comp?.captionStyle ?? captionStyle,
+          pacing: videoPacing,
+          clipPrefix,
+          composition: comp, // Send full composition to edge function
           captionStyle,
           pacing: videoPacing,
           clipPrefix, // Tell edge function where to find uploaded clips
