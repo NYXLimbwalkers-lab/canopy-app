@@ -12,7 +12,6 @@ import {
   Share,
   KeyboardAvoidingView,
   Platform,
-  Image,
 } from 'react-native';
 import { Input } from '@/components/ui/Input';
 import { Theme } from '@/constants/Theme';
@@ -23,6 +22,30 @@ import { supabase } from '@/lib/supabase';
 import { postToTikTok, isTikTokConnected } from '@/lib/tiktok';
 import { uploadYouTubeShort, isYouTubeConnected } from '@/lib/youtube';
 import { isFacebookConnected } from '@/lib/meta';
+
+// ─── Web Video Player (uses native HTML5 <video> on web) ────────────────────
+function WebVideoPlayer({ url, poster }: { url: string; poster?: string | null }) {
+  const containerRef = useRef<View>(null);
+
+  useEffect(() => {
+    if (Platform.OS !== 'web' || !containerRef.current) return;
+    // Access the underlying DOM node for web
+    const node = containerRef.current as unknown as HTMLDivElement;
+    if (!node || !node.querySelector) return;
+    // Clear and insert a <video> element
+    node.innerHTML = '';
+    const video = document.createElement('video');
+    video.src = url;
+    video.controls = true;
+    video.playsInline = true;
+    video.preload = 'metadata';
+    video.style.cssText = 'width:100%;height:100%;border-radius:12px;object-fit:contain;background:#000;';
+    if (poster) video.poster = poster;
+    node.appendChild(video);
+  }, [url, poster]);
+
+  return <View ref={containerRef} style={{ width: '100%', height: '100%' }} />;
+}
 
 // ─── Dark palette (not from Colors — this tab has its own rich dark theme) ───
 const D = {
@@ -448,14 +471,14 @@ function VideoGenerateModal({ visible, videoId, invokeError, onClose, onPostToSo
 
               {video?.video_url && (
                 <View style={vg.thumbnailWrap}>
-                  <Image
-                    source={{ uri: video.thumbnail_url || video.video_url }}
-                    style={{ width: '100%', height: 300, borderRadius: 12 }}
-                    resizeMode="cover"
-                  />
-                  <View style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, justifyContent: 'center', alignItems: 'center' }}>
-                    <Text style={{ fontSize: 48, opacity: 0.9 }}>▶</Text>
-                  </View>
+                  {Platform.OS === 'web' ? (
+                    <WebVideoPlayer url={video.video_url} poster={video.thumbnail_url} />
+                  ) : (
+                    <TouchableOpacity style={{ flex: 1, backgroundColor: '#000', justifyContent: 'center', alignItems: 'center', borderRadius: 12 }} onPress={() => Linking.openURL(video.video_url!)} activeOpacity={0.85}>
+                      <Text style={{ fontSize: 48, opacity: 0.9 }}>▶</Text>
+                      <Text style={{ color: '#fff', marginTop: 8, fontSize: 14 }}>Tap to play video</Text>
+                    </TouchableOpacity>
+                  )}
                 </View>
               )}
 
@@ -537,7 +560,7 @@ const vg = StyleSheet.create({
   readyTitle:         { fontSize: Theme.font.size.title, fontWeight: Theme.font.weight.bold, color: D.text, textAlign: 'center' },
   readySubtitle:      { fontSize: Theme.font.size.small, color: D.textSec, textAlign: 'center' },
 
-  thumbnailWrap:      { width: '100%', aspectRatio: 9/16, maxHeight: 280, borderRadius: Theme.radius.xl, overflow: 'hidden' },
+  thumbnailWrap:      { width: '100%', aspectRatio: 9/16, maxHeight: 420, borderRadius: Theme.radius.xl, overflow: 'hidden' },
   thumbnailPlaceholder: { flex: 1, backgroundColor: D.surfaceAlt, alignItems: 'center', justifyContent: 'center', borderRadius: Theme.radius.xl, borderWidth: 1, borderColor: D.border },
   thumbnailIcon:      { fontSize: 48, color: D.green },
 
