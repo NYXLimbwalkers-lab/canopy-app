@@ -53,12 +53,19 @@ app.post('/render', requireApiKey, async (req, res) => {
   const jobDir = path.join(TMP, videoId);
   if (!fs.existsSync(jobDir)) fs.mkdirSync(jobDir, { recursive: true });
 
+  // Kill the job if it takes longer than 3 minutes (RAM safety)
+  const jobTimeout = setTimeout(() => {
+    console.error(`[${videoId}] Job timeout — killing after 3 minutes`);
+    process.exit(1); // Force restart — Render.com will restart the service
+  }, 180000);
+
   try {
     const supabase = createClient(supabaseUrl, supabaseKey);
+    console.log(`[${videoId}] Starting render: ${videoClips?.length} clips, ${totalDuration}s, audio: ${!!audioUrl}`);
 
-    // Download all assets — limit clips to 3 max for low-RAM environments
+    // Download all assets — limit clips to 2 max for 512MB RAM
     const downloads = [];
-    const clipsToUse = videoClips.slice(0, 3);
+    const clipsToUse = videoClips.slice(0, 2);
 
     // Download video clips
     const clipPaths = [];
@@ -136,8 +143,10 @@ app.post('/render', requireApiKey, async (req, res) => {
       }).catch(() => {});
     }
 
+    clearTimeout(jobTimeout);
     console.log(`[${videoId}] Render complete: ${publicUrl}`);
   } catch (err) {
+    clearTimeout(jobTimeout);
     console.error(`[${videoId}] Render failed:`, err.message);
 
     // Update DB with failure
@@ -207,8 +216,8 @@ function normalizeClip(input, output, duration) {
       .videoCodec('libx264')
       .audioCodec('aac')
       .outputOptions([
-        // Render at 540x960 (half of 1080x1920) to fit in 512MB RAM
-        '-vf', 'scale=540:960:force_original_aspect_ratio=decrease,pad=540:960:(ow-iw)/2:(oh-ih)/2:black,setsar=1',
+        // Render at 360x640 to fit in 512MB RAM on Render.com free tier
+        '-vf', 'scale=360:640:force_original_aspect_ratio=decrease,pad=360:640:(ow-iw)/2:(oh-ih)/2:black,setsar=1',
         '-r', '24',
         '-pix_fmt', 'yuv420p',
         '-an',  // Strip audio from clips — we use voiceover
@@ -252,7 +261,7 @@ function composeFinal(videoPath, audioPath, captionSegments, watermarkText, tota
     const filters = [];
     let lastLabel = '0:v';
 
-    // Add watermark text (top-left) — font sizes scaled for 540x960
+    // Add watermark text (top-left) — font sizes scaled for 360x640
     if (watermarkText) {
       const escaped = watermarkText.replace(/'/g, "'\\''").replace(/:/g, '\\:');
       filters.push(
@@ -261,7 +270,7 @@ function composeFinal(videoPath, audioPath, captionSegments, watermarkText, tota
       lastLabel = 'wm';
     }
 
-    // Add caption segments (centered bottom) — font sizes scaled for 540x960
+    // Add caption segments (centered bottom) — font sizes scaled for 360x640
     if (captionSegments?.length) {
       captionSegments.forEach((seg, i) => {
         const escaped = seg.text.replace(/'/g, "'\\''").replace(/:/g, '\\:');
