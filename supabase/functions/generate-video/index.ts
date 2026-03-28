@@ -84,21 +84,25 @@ Deno.serve(async (req: Request) => {
   }
 })
 
-// Strip stage directions, shot markers, and formatting from script so TTS only speaks natural words
+// Strip stage directions, shot markers, formatting, hashtags, and labels so TTS only speaks natural words
 function cleanScriptForTTS(raw: string): string {
   return raw
-    .replace(/\[.*?\]/g, '')
-    .replace(/^(HOOK|CTA|INTRO|OUTRO|---)\s*:?\s*/gim, '')
-    .replace(/---+/g, '')
-    .replace(/\*\*.*?\*\*/g, '')
-    .replace(/#+\s*/g, '')
+    .replace(/\[.*?\]/g, '')                             // [stage directions]
+    .replace(/^(HOOK|CTA|INTRO|OUTRO|SCRIPT|Caption)\s*:?\s*/gim, '') // Labels
+    .replace(/---+/g, '')                                // Dividers
+    .replace(/\*\*.*?\*\*/g, '')                         // Bold markers
+    .replace(/#+\s*/g, '')                               // Headings
+    .replace(/#\w+/g, '')                                // #hashtags
+    .replace(/^Caption:.*$/gim, '')                      // Caption: lines
+    .replace(/^\s*https?:\/\/\S+\s*$/gm, '')             // URLs on their own line
     .replace(/\n{2,}/g, '\n')
     .replace(/^\s+|\s+$/gm, '')
     .split('\n')
-    .filter(line => line.length > 0)
+    .filter(line => line.trim().length > 0)
     .join('. ')
     .replace(/\.\.\./g, ', ')
     .replace(/\.\s*\./g, '.')
+    .replace(/\s{2,}/g, ' ')
     .trim()
 }
 

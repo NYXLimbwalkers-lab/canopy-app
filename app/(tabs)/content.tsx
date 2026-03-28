@@ -591,7 +591,8 @@ export default function ContentScreen() {
   const [refreshing,        setRefreshing]        = useState(false);
   const [selectedVideoType, setSelectedVideoType] = useState<string | null>(null);
   const [generatingScript,  setGeneratingScript]  = useState(false);
-  const [script,            setScript]            = useState<string | null>(null);
+  const [script,            setScript]            = useState<string | null>(null);       // clean spoken-only text for TTS
+  const [scriptDisplay,     setScriptDisplay]     = useState<{ hook: string; body: string; hashtags: string[]; caption: string } | null>(null);
   const [scriptModal,       setScriptModal]       = useState(false);
   const [teleprompterModal, setTeleprompterModal] = useState(false);
   const [videoModal,        setVideoModal]        = useState(false);
@@ -650,6 +651,7 @@ export default function ContentScreen() {
   const generateScript = async (videoType: string) => {
     if (!isAIConfigured() || !company) {
       setScript('Connect your OpenRouter API key in settings to generate AI scripts.');
+      setScriptDisplay(null);
       setScriptModal(true);
       return;
     }
@@ -658,6 +660,7 @@ export default function ContentScreen() {
     setGeneratingScript(true);
     setScriptModal(true);
     setScript(null);
+    setScriptDisplay(null);
 
     try {
       const result = await generateVideoScript(
@@ -670,11 +673,18 @@ export default function ContentScreen() {
         videoType,
         {},
       );
-      // Format script with hook prominently displayed
-      const formattedScript = `HOOK: ${result.hook}\n---\n${result.script}\n\n${result.hashtags.join(' ')}\n\nCaption: ${result.caption}`;
-      setScript(formattedScript);
+      // Store the clean spoken-only script for TTS (this is what gets sent to the edge function)
+      setScript(result.script);
+      // Store structured display data for the UI
+      setScriptDisplay({
+        hook: result.hook,
+        body: result.script,
+        hashtags: result.hashtags,
+        caption: result.caption,
+      });
     } catch {
       setScript('Error generating script. Check your connection and try again.');
+      setScriptDisplay(null);
     } finally {
       setGeneratingScript(false);
     }
@@ -999,7 +1009,7 @@ export default function ContentScreen() {
                 <Text style={sm.loadingTitle}>Writing your script...</Text>
                 <Text style={sm.loadingSubtitle}>Claude is crafting something viral</Text>
               </View>
-            ) : script ? (
+            ) : (script || scriptDisplay) ? (
               <>
                 <View style={sm.aiBadge}>
                   <Text style={sm.aiBadgeText}>✦ AI-generated script</Text>
@@ -1015,9 +1025,44 @@ export default function ContentScreen() {
                   ) : null;
                 })()}
 
-                <View style={sm.scriptBox}>
-                  <Text style={sm.scriptText}>{script}</Text>
-                </View>
+                {scriptDisplay ? (
+                  <>
+                    {/* Hook — displayed prominently */}
+                    <View style={sm.hookBox}>
+                      <Text style={sm.hookLabel}>HOOK</Text>
+                      <Text style={sm.hookText}>{scriptDisplay.hook}</Text>
+                    </View>
+
+                    {/* Spoken script body */}
+                    <View style={sm.scriptBox}>
+                      <Text style={sm.scriptBoxLabel}>SCRIPT</Text>
+                      <Text style={sm.scriptText}>{scriptDisplay.body}</Text>
+                    </View>
+
+                    {/* Hashtags */}
+                    {scriptDisplay.hashtags.length > 0 && (
+                      <View style={sm.tagsRow}>
+                        {scriptDisplay.hashtags.map((tag, i) => (
+                          <View key={i} style={sm.tag}>
+                            <Text style={sm.tagText}>{tag}</Text>
+                          </View>
+                        ))}
+                      </View>
+                    )}
+
+                    {/* Caption */}
+                    {scriptDisplay.caption ? (
+                      <View style={sm.captionBox}>
+                        <Text style={sm.captionLabel}>CAPTION</Text>
+                        <Text style={sm.captionText}>{scriptDisplay.caption}</Text>
+                      </View>
+                    ) : null}
+                  </>
+                ) : (
+                  <View style={sm.scriptBox}>
+                    <Text style={sm.scriptText}>{script}</Text>
+                  </View>
+                )}
 
                 <View style={sm.actionRow}>
                   <Button
@@ -1393,8 +1438,21 @@ const sm = StyleSheet.create({
   scoreRow:   { flexDirection: 'row', alignItems: 'center', gap: 8 },
   scoreLabel: { fontSize: Theme.font.size.small, color: D.textSec },
 
-  scriptBox:  { backgroundColor: D.surface, borderRadius: Theme.radius.xl, padding: Theme.space.xl, borderWidth: 1, borderColor: D.border },
-  scriptText: { fontSize: Theme.font.size.body, color: D.text, lineHeight: 26 },
+  hookBox:        { backgroundColor: D.gold + '15', borderRadius: Theme.radius.lg, padding: Theme.space.lg, borderWidth: 1, borderColor: D.gold + '40' },
+  hookLabel:      { fontSize: 10, fontWeight: '800' as const, color: D.gold, letterSpacing: 1.5, marginBottom: 6 },
+  hookText:       { fontSize: 20, fontWeight: '700' as const, color: '#FFFFFF', lineHeight: 28 },
+
+  scriptBox:      { backgroundColor: D.surface, borderRadius: Theme.radius.xl, padding: Theme.space.xl, borderWidth: 1, borderColor: D.border },
+  scriptBoxLabel: { fontSize: 10, fontWeight: '800' as const, color: D.textSec, letterSpacing: 1.5, marginBottom: 8 },
+  scriptText:     { fontSize: Theme.font.size.body, color: D.text, lineHeight: 26 },
+
+  tagsRow:        { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
+  tag:            { backgroundColor: D.surfaceAlt, paddingHorizontal: 10, paddingVertical: 4, borderRadius: Theme.radius.full, borderWidth: 1, borderColor: D.border },
+  tagText:        { fontSize: 12, color: D.textSec, fontWeight: '500' as const },
+
+  captionBox:     { backgroundColor: D.surfaceAlt, borderRadius: Theme.radius.lg, padding: Theme.space.md, borderWidth: 1, borderColor: D.border },
+  captionLabel:   { fontSize: 10, fontWeight: '800' as const, color: D.textSec, letterSpacing: 1.5, marginBottom: 4 },
+  captionText:    { fontSize: Theme.font.size.small, color: D.textSec, lineHeight: 20, fontStyle: 'italic' as const },
 
   actionRow:           { flexDirection: 'row', gap: Theme.space.md, flexWrap: 'wrap' },
   regenBtn:            { alignSelf: 'flex-start' },
