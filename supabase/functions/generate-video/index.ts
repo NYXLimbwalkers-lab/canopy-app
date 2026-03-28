@@ -412,11 +412,26 @@ async function processVideo(
   const wordCount = spokenText.split(/\s+/).length
   const estimatedDuration = Math.max(20, Math.min(60, Math.round(wordCount / 2.5)))
 
-  await updateProgress(supabase, videoId, 'Rendering video...', 50)
-  // ── Step 3: Render via Creatomate (cloud) → fallback to self-hosted FFmpeg ──
+  await updateProgress(supabase, videoId, 'Rendering video on local server...', 50)
+  // ── Step 3: Render — Mac Mini first (fast, free, 1080p), Creatomate as backup ──
   let rendered = false
 
-  if (creatomateKey) {
+  // PRIMARY: Self-hosted render on Mac Mini (free, fast, full quality)
+  if (renderServerUrl) {
+    try {
+      await renderViaSelfHosted(
+        supabase, renderServerUrl, videoId, videoClips, audioUrl,
+        spokenText, companyName, estimatedDuration, supabaseUrl,
+      )
+      rendered = true
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err)
+      console.error('Local render failed, trying Creatomate:', msg)
+    }
+  }
+
+  // BACKUP: Creatomate cloud (if local server is down)
+  if (!rendered && creatomateKey) {
     try {
       await renderViaCreatomate(
         supabase, creatomateKey, videoId, videoClips, audioUrl,
@@ -425,16 +440,8 @@ async function processVideo(
       rendered = true
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err)
-      console.error('Creatomate failed, falling back to self-hosted:', msg)
+      console.error('Creatomate also failed:', msg)
     }
-  }
-
-  if (!rendered && renderServerUrl) {
-    await renderViaSelfHosted(
-      supabase, renderServerUrl, videoId, videoClips, audioUrl,
-      spokenText, companyName, estimatedDuration, supabaseUrl,
-    )
-    rendered = true
   }
 
   if (!rendered) {
