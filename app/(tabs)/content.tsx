@@ -87,14 +87,55 @@ interface GeneratedVideo {
 }
 
 // ─── Constants ────────────────────────────────────────────────────────────────
-const VIDEO_TYPES = [
-  { key: 'satisfying_removal', emoji: '🌳', label: 'Satisfying Removal',  viralScore: 9.4 },
-  { key: 'before_after',       emoji: '✨', label: 'Before & After',       viralScore: 8.8 },
-  { key: 'did_you_know',       emoji: '🧠', label: 'Did You Know',         viralScore: 7.9 },
-  { key: 'day_in_life',        emoji: '📸', label: 'Day in the Life',      viralScore: 8.2 },
-  { key: 'price_transparency', emoji: '💰', label: 'Price Transparency',   viralScore: 9.1 },
-  { key: 'storm_damage',       emoji: '⚡', label: 'Storm Damage',         viralScore: 9.6 },
+interface VideoTypeItem {
+  key: string;
+  emoji: string;
+  label: string;
+  desc: string;
+  viralScore: number;
+}
+interface VideoCategory {
+  label: string;
+  types: VideoTypeItem[];
+}
+
+const VIDEO_CATEGORIES: VideoCategory[] = [
+  {
+    label: 'SHOWCASE YOUR WORK',
+    types: [
+      { key: 'satisfying_removal', emoji: '🌳', label: 'Satisfying Removal', desc: 'Watch a massive tree come down safely', viralScore: 9.4 },
+      { key: 'before_after',       emoji: '✨', label: 'Before & After',     desc: 'Dramatic property transformations', viralScore: 8.8 },
+      { key: 'crane_job',          emoji: '🏗', label: 'Crane Job',          desc: 'Heavy equipment, high stakes', viralScore: 9.2 },
+      { key: 'stump_grinding',     emoji: '💨', label: 'Stump Grinding',     desc: 'Oddly satisfying disappearing act', viralScore: 8.5 },
+    ],
+  },
+  {
+    label: 'EDUCATE & BUILD TRUST',
+    types: [
+      { key: 'did_you_know',       emoji: '🧠', label: 'Did You Know',       desc: 'Surprising tree facts that hook viewers', viralScore: 7.9 },
+      { key: 'price_transparency', emoji: '💰', label: 'Price Breakdown',    desc: 'Show what tree work really costs', viralScore: 9.1 },
+      { key: 'tree_health_tip',    emoji: '🩺', label: 'Tree Health Tip',    desc: 'Signs your tree needs attention', viralScore: 7.6 },
+    ],
+  },
+  {
+    label: 'BEHIND THE SCENES',
+    types: [
+      { key: 'day_in_life',        emoji: '📸', label: 'Day in the Life',    desc: 'Raw look at the daily grind', viralScore: 8.2 },
+      { key: 'crew_spotlight',     emoji: '👷', label: 'Crew Spotlight',     desc: 'Introduce your team', viralScore: 7.8 },
+      { key: 'equipment_tour',     emoji: '🔧', label: 'Equipment Tour',     desc: 'Show off your trucks and tools', viralScore: 7.5 },
+    ],
+  },
+  {
+    label: 'URGENCY & SEASONAL',
+    types: [
+      { key: 'storm_damage',       emoji: '⚡', label: 'Storm Damage',       desc: 'Emergency response content', viralScore: 9.6 },
+      { key: 'seasonal_reminder',  emoji: '🍂', label: 'Seasonal Reminder',  desc: 'Timely tips that drive calls', viralScore: 8.0 },
+    ],
+  },
 ];
+
+// Flat list for backward-compat lookups
+const VIDEO_TYPES = VIDEO_CATEGORIES.flatMap(c => c.types);
 
 const SOCIAL_PLATFORMS = [
   {
@@ -605,6 +646,16 @@ export default function ContentScreen() {
   const [socialSaving,      setSocialSaving]      = useState(false);
   const [socialError,       setSocialError]       = useState<string | null>(null);
 
+  // Customization state (pre-generation options)
+  const [customizeModal,    setCustomizeModal]    = useState(false);
+  const [scriptTone,        setScriptTone]        = useState<'casual' | 'professional' | 'hype' | 'funny'>('casual');
+  const [scriptPlatform,    setScriptPlatform]    = useState<'tiktok' | 'youtube_shorts' | 'instagram_reels'>('tiktok');
+  const [scriptDuration,    setScriptDuration]    = useState<'short' | 'medium' | 'long'>('medium');
+  const [scriptContext,     setScriptContext]      = useState('');
+  // Render style options
+  const [captionStyle,      setCaptionStyle]      = useState<'bold' | 'minimal' | 'subtitle'>('bold');
+  const [videoPacing,       setVideoPacing]       = useState<'fast' | 'medium' | 'slow'>('medium');
+
   // Post to Social modal state
   const [postSocialModal,   setPostSocialModal]   = useState(false);
   const [postSocialVideo,   setPostSocialVideo]   = useState<{ url: string; title: string; script: string } | null>(null);
@@ -671,7 +722,12 @@ export default function ContentScreen() {
           services: company.services_offered,
         },
         videoType,
-        {},
+        {
+          tone: scriptTone,
+          platform: scriptPlatform,
+          duration: scriptDuration,
+          customContext: scriptContext || undefined,
+        },
       );
       // Store the clean spoken-only script for TTS (this is what gets sent to the edge function)
       setScript(result.script);
@@ -700,7 +756,13 @@ export default function ContentScreen() {
 
     try {
       const { data, error } = await supabase.functions.invoke('generate-video', {
-        body: { script, videoType: selectedVideoType, companyId: company.id },
+        body: {
+          script,
+          videoType: selectedVideoType,
+          companyId: company.id,
+          captionStyle,
+          pacing: videoPacing,
+        },
       });
       if (error) throw error;
       setVideoJobId(data?.id ?? null);
@@ -922,24 +984,30 @@ export default function ContentScreen() {
           <Text style={s.aiPillText}>✦ AI-Powered</Text>
         </View>
         <Text style={s.studioSubtitle}>
-          Tap a video type to generate a 30–60 sec script. Higher 🔥 = more viral potential.
+          Pick a video type, customize your style, and let AI write a viral script. Higher 🔥 = more viral potential.
         </Text>
       </View>
 
-      <View style={s.videoTypeGrid}>
-        {VIDEO_TYPES.map(vt => (
-          <TouchableOpacity
-            key={vt.key}
-            style={s.videoTypeCard}
-            onPress={() => generateScript(vt.key)}
-            activeOpacity={0.75}
-          >
-            <Text style={s.videoTypeEmoji}>{vt.emoji}</Text>
-            <Text style={s.videoTypeLabel}>{vt.label}</Text>
-            <ViralScoreBadge score={vt.viralScore} />
-          </TouchableOpacity>
-        ))}
-      </View>
+      {VIDEO_CATEGORIES.map(cat => (
+        <View key={cat.label} style={s.categorySection}>
+          <Text style={s.categoryLabel}>{cat.label}</Text>
+          <View style={s.videoTypeGrid}>
+            {cat.types.map(vt => (
+              <TouchableOpacity
+                key={vt.key}
+                style={s.videoTypeCard}
+                onPress={() => { setSelectedVideoType(vt.key); setCustomizeModal(true); }}
+                activeOpacity={0.75}
+              >
+                <Text style={s.videoTypeEmoji}>{vt.emoji}</Text>
+                <Text style={s.videoTypeLabel}>{vt.label}</Text>
+                <Text style={s.videoTypeDesc}>{vt.desc}</Text>
+                <ViralScoreBadge score={vt.viralScore} />
+              </TouchableOpacity>
+            ))}
+          </View>
+        </View>
+      ))}
 
       {/* ── Platforms ── */}
       <Text style={s.sectionTitle}>PLATFORMS</Text>
@@ -985,6 +1053,113 @@ export default function ContentScreen() {
 
       {/* ── Collapsible calendar (bottom) ── */}
       <CollapsibleCalendar posts={upcomingPosts} />
+
+      {/* ── Customize Modal (pre-generation options) ── */}
+      <Modal
+        visible={customizeModal}
+        animationType="slide"
+        presentationStyle="pageSheet"
+        onRequestClose={() => setCustomizeModal(false)}
+      >
+        <View style={cm.container}>
+          <View style={cm.header}>
+            <TouchableOpacity onPress={() => setCustomizeModal(false)}>
+              <Text style={cm.closeTxt}>Cancel</Text>
+            </TouchableOpacity>
+            <Text style={cm.headerTitle}>
+              {VIDEO_TYPES.find(v => v.key === selectedVideoType)?.emoji}{' '}
+              {VIDEO_TYPES.find(v => v.key === selectedVideoType)?.label ?? 'Video'}
+            </Text>
+            <View style={{ width: 50 }} />
+          </View>
+
+          <ScrollView style={cm.scroll} contentContainerStyle={cm.scrollContent}>
+            {/* Tone */}
+            <Text style={cm.optionLabel}>TONE</Text>
+            <View style={cm.pillRow}>
+              {([
+                { key: 'casual', label: 'Casual', icon: '💬' },
+                { key: 'professional', label: 'Pro', icon: '🎯' },
+                { key: 'hype', label: 'Hype', icon: '🔥' },
+                { key: 'funny', label: 'Funny', icon: '😂' },
+              ] as const).map(t => (
+                <TouchableOpacity
+                  key={t.key}
+                  style={[cm.pill, scriptTone === t.key && cm.pillActive]}
+                  onPress={() => setScriptTone(t.key)}
+                  activeOpacity={0.8}
+                >
+                  <Text style={cm.pillIcon}>{t.icon}</Text>
+                  <Text style={[cm.pillText, scriptTone === t.key && cm.pillTextActive]}>{t.label}</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+
+            {/* Platform */}
+            <Text style={cm.optionLabel}>PLATFORM</Text>
+            <View style={cm.pillRow}>
+              {([
+                { key: 'tiktok', label: 'TikTok', icon: '♪' },
+                { key: 'youtube_shorts', label: 'YT Shorts', icon: '▶' },
+                { key: 'instagram_reels', label: 'Reels', icon: '◈' },
+              ] as const).map(p => (
+                <TouchableOpacity
+                  key={p.key}
+                  style={[cm.pill, scriptPlatform === p.key && cm.pillActive]}
+                  onPress={() => setScriptPlatform(p.key)}
+                  activeOpacity={0.8}
+                >
+                  <Text style={cm.pillIcon}>{p.icon}</Text>
+                  <Text style={[cm.pillText, scriptPlatform === p.key && cm.pillTextActive]}>{p.label}</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+
+            {/* Duration */}
+            <Text style={cm.optionLabel}>LENGTH</Text>
+            <View style={cm.pillRow}>
+              {([
+                { key: 'short', label: 'Short', sub: '15-30s' },
+                { key: 'medium', label: 'Medium', sub: '30-60s' },
+                { key: 'long', label: 'Long', sub: '60-90s' },
+              ] as const).map(d => (
+                <TouchableOpacity
+                  key={d.key}
+                  style={[cm.pill, cm.pillWide, scriptDuration === d.key && cm.pillActive]}
+                  onPress={() => setScriptDuration(d.key)}
+                  activeOpacity={0.8}
+                >
+                  <Text style={[cm.pillText, scriptDuration === d.key && cm.pillTextActive]}>{d.label}</Text>
+                  <Text style={[cm.pillSub, scriptDuration === d.key && cm.pillSubActive]}>{d.sub}</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+
+            {/* Custom context */}
+            <Text style={cm.optionLabel}>ADD DETAILS (OPTIONAL)</Text>
+            <Input
+              placeholder="e.g. We just took down a 60-foot oak next to a pool..."
+              value={scriptContext}
+              onChangeText={setScriptContext}
+              multiline
+              numberOfLines={3}
+              style={cm.contextInput}
+            />
+
+            {/* Generate button */}
+            <TouchableOpacity
+              style={cm.generateBtn}
+              onPress={() => {
+                setCustomizeModal(false);
+                if (selectedVideoType) generateScript(selectedVideoType);
+              }}
+              activeOpacity={0.85}
+            >
+              <Text style={cm.generateBtnText}>✦ Generate Script</Text>
+            </TouchableOpacity>
+          </ScrollView>
+        </View>
+      </Modal>
 
       {/* ── Script modal ── */}
       <Modal
@@ -1075,6 +1250,50 @@ export default function ContentScreen() {
                 </View>
 
                 <View style={sm.makeVideoSection}>
+                  <Text style={sm.makeVideoLabel}>VIDEO STYLE</Text>
+
+                  {/* Caption style picker */}
+                  <View style={sm.styleRow}>
+                    <Text style={sm.styleLabel}>Captions</Text>
+                    <View style={sm.stylePills}>
+                      {([
+                        { key: 'bold', label: 'Bold' },
+                        { key: 'minimal', label: 'Minimal' },
+                        { key: 'subtitle', label: 'Subtitle' },
+                      ] as const).map(c => (
+                        <TouchableOpacity
+                          key={c.key}
+                          style={[sm.stylePill, captionStyle === c.key && sm.stylePillActive]}
+                          onPress={() => setCaptionStyle(c.key)}
+                          activeOpacity={0.8}
+                        >
+                          <Text style={[sm.stylePillText, captionStyle === c.key && sm.stylePillTextActive]}>{c.label}</Text>
+                        </TouchableOpacity>
+                      ))}
+                    </View>
+                  </View>
+
+                  {/* Pacing picker */}
+                  <View style={sm.styleRow}>
+                    <Text style={sm.styleLabel}>Pacing</Text>
+                    <View style={sm.stylePills}>
+                      {([
+                        { key: 'fast', label: 'Fast cuts' },
+                        { key: 'medium', label: 'Normal' },
+                        { key: 'slow', label: 'Cinematic' },
+                      ] as const).map(p => (
+                        <TouchableOpacity
+                          key={p.key}
+                          style={[sm.stylePill, videoPacing === p.key && sm.stylePillActive]}
+                          onPress={() => setVideoPacing(p.key)}
+                          activeOpacity={0.8}
+                        >
+                          <Text style={[sm.stylePillText, videoPacing === p.key && sm.stylePillTextActive]}>{p.label}</Text>
+                        </TouchableOpacity>
+                      ))}
+                    </View>
+                  </View>
+
                   <Text style={sm.makeVideoLabel}>MAKE THIS VIDEO</Text>
 
                   {/* Film yourself option */}
@@ -1376,7 +1595,9 @@ const s = StyleSheet.create({
   aiPillText:     { fontSize: 11, fontWeight: '700' as const, color: D.purple, letterSpacing: 0.5 },
   studioSubtitle: { fontSize: Theme.font.size.small, color: D.textSec, lineHeight: 20 },
 
-  videoTypeGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: Theme.space.md },
+  categorySection: { gap: Theme.space.sm },
+  categoryLabel:   { fontSize: 10, fontWeight: '800' as const, color: D.gold, letterSpacing: 1.5 },
+  videoTypeGrid:   { flexDirection: 'row', flexWrap: 'wrap', gap: Theme.space.md },
   videoTypeCard: {
     width: '47.5%',
     backgroundColor: D.surfaceAlt,
@@ -1384,8 +1605,8 @@ const s = StyleSheet.create({
     borderWidth: 1,
     borderColor: D.border,
     padding: Theme.space.lg,
-    gap: Theme.space.sm,
-    minHeight: 110,
+    gap: 4,
+    minHeight: 130,
     justifyContent: 'space-between',
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 4 },
@@ -1393,8 +1614,9 @@ const s = StyleSheet.create({
     shadowRadius: 8,
     elevation: 4,
   },
-  videoTypeEmoji: { fontSize: 30 },
+  videoTypeEmoji: { fontSize: 28 },
   videoTypeLabel: { fontSize: Theme.font.size.small, fontWeight: Theme.font.weight.semibold, color: D.text, lineHeight: 18 },
+  videoTypeDesc:  { fontSize: 11, color: D.textSec, lineHeight: 15 },
 
   platformsWrap:    { gap: Theme.space.md },
   platformCard:     { borderRadius: Theme.radius.xl, borderWidth: 1.5, padding: Theme.space.lg, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
@@ -1468,6 +1690,14 @@ const sm = StyleSheet.create({
   filmBtnArrow:        { fontSize: 22, color: D.textSec, fontWeight: '300' as const },
 
   aiVideoBtn:          { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', backgroundColor: D.green, borderRadius: Theme.radius.lg, padding: Theme.space.lg },
+
+  styleRow:            { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 },
+  styleLabel:          { fontSize: Theme.font.size.small, color: D.textSec, fontWeight: Theme.font.weight.medium },
+  stylePills:          { flexDirection: 'row', gap: 6 },
+  stylePill:           { paddingHorizontal: 12, paddingVertical: 6, borderRadius: Theme.radius.full, backgroundColor: D.surfaceAlt, borderWidth: 1, borderColor: D.border },
+  stylePillActive:     { backgroundColor: D.green + '25', borderColor: D.green },
+  stylePillText:       { fontSize: 12, color: D.textSec, fontWeight: '600' as const },
+  stylePillTextActive: { color: D.green },
 });
 
 // ─── Post to Social modal styles ─────────────────────────────────────────────
@@ -1498,4 +1728,31 @@ const ps = StyleSheet.create({
   resultIcon:         { fontSize: 18, fontWeight: '700' as const, marginTop: 1 },
   resultPlatform:     { fontSize: Theme.font.size.body, fontWeight: Theme.font.weight.semibold, color: D.text },
   resultMessage:      { fontSize: Theme.font.size.small, color: D.textSec, marginTop: 2 },
+});
+
+// ─── Customize modal styles ──────────────────────────────────────────────────
+const cm = StyleSheet.create({
+  container:     { flex: 1, backgroundColor: D.bg },
+  header:        { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: Theme.layout.screenPadding, paddingTop: Theme.space.xl, borderBottomWidth: 1, borderBottomColor: D.border, backgroundColor: D.surface },
+  closeTxt:      { fontSize: Theme.font.size.body, color: D.textSec, fontWeight: Theme.font.weight.semibold },
+  headerTitle:   { fontSize: Theme.font.size.subtitle, fontWeight: Theme.font.weight.semibold, color: D.text },
+  scroll:        { flex: 1 },
+  scrollContent: { padding: Theme.layout.screenPadding, paddingBottom: 48, gap: Theme.space.lg },
+
+  optionLabel:   { fontSize: 10, fontWeight: '800' as const, color: D.gold, letterSpacing: 1.5, marginTop: 4 },
+
+  pillRow:       { flexDirection: 'row', gap: 8, flexWrap: 'wrap' },
+  pill:          { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 14, paddingVertical: 10, borderRadius: Theme.radius.lg, backgroundColor: D.surfaceAlt, borderWidth: 1.5, borderColor: D.border },
+  pillActive:    { backgroundColor: D.green + '20', borderColor: D.green },
+  pillWide:      { flex: 1, justifyContent: 'center' },
+  pillIcon:      { fontSize: 16 },
+  pillText:      { fontSize: 14, fontWeight: '600' as const, color: D.textSec },
+  pillTextActive:{ color: D.green },
+  pillSub:       { fontSize: 11, color: D.textSec + '80', marginTop: 1 },
+  pillSubActive: { color: D.green + 'AA' },
+
+  contextInput:  { backgroundColor: D.surfaceAlt, borderRadius: Theme.radius.lg, borderWidth: 1, borderColor: D.border, color: D.text, padding: Theme.space.md, fontSize: 14, minHeight: 80, textAlignVertical: 'top' } as any,
+
+  generateBtn:     { backgroundColor: D.green, borderRadius: Theme.radius.lg, paddingVertical: 16, alignItems: 'center', marginTop: Theme.space.md },
+  generateBtnText: { fontSize: Theme.font.size.body, fontWeight: Theme.font.weight.bold, color: '#FFFFFF' },
 });

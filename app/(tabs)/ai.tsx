@@ -875,7 +875,7 @@ export default function AIExpertScreen() {
       const script = await generateVideoScript(ctx, 'before_after_transformation', {
         what: 'large tree removal',
         where: ctx.city,
-        duration: '30-60 seconds',
+        duration: 'medium',
       });
 
       const aiMsg: Message = {

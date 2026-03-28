@@ -18,6 +18,12 @@ const VIDEO_TYPE_SEARCH: Record<string, string> = {
   day_in_life:        'arborist tree climbing worker',
   price_transparency: 'tree service yard work estimate',
   storm_damage:       'storm damage fallen tree hurricane',
+  crane_job:          'crane heavy lifting construction',
+  stump_grinding:     'stump removal grinding wood chips',
+  tree_health_tip:    'tree bark leaves nature closeup',
+  crew_spotlight:     'construction worker team outdoor',
+  equipment_tour:     'chainsaw tools equipment workshop',
+  seasonal_reminder:  'autumn leaves spring garden season',
 }
 
 Deno.serve(async (req: Request) => {
@@ -38,7 +44,7 @@ Deno.serve(async (req: Request) => {
   )
 
   try {
-    const { script, videoType, companyId } = await req.json()
+    const { script, videoType, companyId, captionStyle, pacing } = await req.json()
 
     if (!script || !videoType || !companyId) {
       return new Response(JSON.stringify({ error: 'Missing script, videoType, or companyId' }), {
@@ -46,6 +52,9 @@ Deno.serve(async (req: Request) => {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       })
     }
+
+    const renderCaptionStyle = captionStyle ?? 'bold'
+    const renderPacing = pacing ?? 'medium'
 
     // Create DB record immediately so client can subscribe to Realtime
     const { data: videoRecord, error: insertError } = await supabase
@@ -62,7 +71,7 @@ Deno.serve(async (req: Request) => {
 
     // Process video synchronously — Deno Deploy kills dangling promises after response
     try {
-      await processVideo(supabase, videoId, script, videoType)
+      await processVideo(supabase, videoId, script, videoType, renderCaptionStyle, renderPacing)
     } catch (processErr: unknown) {
       const msg = processErr instanceof Error ? processErr.message : 'Processing failed'
       await supabase
@@ -170,6 +179,8 @@ async function processVideo(
   videoId: string,
   script: string,
   videoType: string,
+  captionStyle: string = 'bold',
+  pacing: string = 'medium',
 ) {
   const elevenLabsKey   = Deno.env.get('ELEVENLABS_API_KEY')
   const pexelsKey       = Deno.env.get('PEXELS_API_KEY')
@@ -273,14 +284,16 @@ async function processVideo(
 
   if (pexelsKey) {
     const query = VIDEO_TYPE_SEARCH[videoType] ?? 'tree service arborist'
+    const clipCount = pacing === 'fast' ? 8 : pacing === 'slow' ? 3 : 5
     const pexelsResp = await fetch(
-      `https://api.pexels.com/videos/search?query=${encodeURIComponent(query)}&per_page=5&orientation=portrait&size=medium`,
+      `https://api.pexels.com/videos/search?query=${encodeURIComponent(query)}&per_page=${clipCount}&orientation=portrait&size=medium`,
       { headers: { Authorization: pexelsKey } },
     )
 
     if (pexelsResp.ok) {
       const pexelsData = await pexelsResp.json()
-      for (const video of (pexelsData.videos ?? []).slice(0, 4)) {
+      const maxClips = pacing === 'fast' ? 7 : pacing === 'slow' ? 3 : 4
+      for (const video of (pexelsData.videos ?? []).slice(0, maxClips)) {
         const hdFile = video.video_files?.find((f: any) => f.quality === 'hd')
           ?? video.video_files?.[0]
         if (hdFile?.link) videoClips.push(hdFile.link)
@@ -296,7 +309,7 @@ async function processVideo(
   if (creatomateKey) {
     await renderViaCreatomate(
       supabase, creatomateKey, videoId, videoClips, audioUrl,
-      spokenText, companyName, estimatedDuration, supabaseUrl,
+      spokenText, companyName, estimatedDuration, supabaseUrl, captionStyle,
     )
   } else if (renderServerUrl) {
     await renderViaSelfHosted(
@@ -319,6 +332,7 @@ async function renderViaCreatomate(
   companyName: string,
   totalDuration: number,
   supabaseUrl: string,
+  captionStyle: string = 'bold',
 ) {
   // Build a Creatomate source JSON (dynamic template)
   // 9:16 portrait video with stock clips, voiceover, captions, and watermark
@@ -341,24 +355,53 @@ async function renderViaCreatomate(
   const sentences = spokenText.split(/(?<=[.!?])\s+/).filter(s => s.length > 5)
   const maxSegs = Math.min(sentences.length, 6)
   const segDuration = totalDuration / maxSegs
+
+  // Caption style presets
+  const captionPresets: Record<string, Record<string, string>> = {
+    bold: {
+      font_family: 'Montserrat',
+      font_weight: '800',
+      font_size: '7 vmin',
+      fill_color: '#ffffff',
+      stroke_color: '#000000',
+      stroke_width: '1.5 vmin',
+      background_color: 'rgba(0,0,0,0.4)',
+      background_x_padding: '30%',
+      background_y_padding: '15%',
+      background_border_radius: '30%',
+    },
+    minimal: {
+      font_family: 'Inter',
+      font_weight: '500',
+      font_size: '5 vmin',
+      fill_color: 'rgba(255,255,255,0.9)',
+      stroke_color: 'rgba(0,0,0,0.6)',
+      stroke_width: '0.8 vmin',
+    },
+    subtitle: {
+      font_family: 'Inter',
+      font_weight: '600',
+      font_size: '5.5 vmin',
+      fill_color: '#ffffff',
+      stroke_color: '#000000',
+      stroke_width: '0.5 vmin',
+      background_color: 'rgba(0,0,0,0.7)',
+      background_x_padding: '20%',
+      background_y_padding: '10%',
+      background_border_radius: '10%',
+    },
+  }
+  const capStyle = captionPresets[captionStyle] ?? captionPresets.bold
+
   const captionElements = sentences.slice(0, maxSegs).map((text, i) => ({
     type: 'text',
     text: text.length > 80 ? text.slice(0, 77) + '...' : text,
     time: i * segDuration,
     duration: segDuration,
-    y: '85%',
+    y: captionStyle === 'subtitle' ? '92%' : '85%',
     width: '90%',
     x_alignment: '50%',
-    font_family: 'Montserrat',
-    font_weight: '800',
-    font_size: '7 vmin',
-    fill_color: '#ffffff',
-    stroke_color: '#000000',
-    stroke_width: '1.5 vmin',
-    background_color: 'rgba(0,0,0,0.4)',
-    background_x_padding: '30%',
-    background_y_padding: '15%',
-    background_border_radius: '30%',
+    ...capStyle,
   }))
 
   // Watermark

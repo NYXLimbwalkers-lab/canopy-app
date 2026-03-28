@@ -330,13 +330,144 @@ const VIDEO_TYPE_PROMPTS: Record<string, {
     hookStyle: 'Dramatic real footage or setup — "This just happened two hours ago." Urgency and shock.',
     ctaStyle: 'Helpful urgency — "Save our number before storm season. When it hits, were booked for weeks."',
   },
+  crane_job: {
+    angles: [
+      'This oak was so big the only option was a 90-ton crane — watch this',
+      'Why we spent $2,000 on a crane rental for one tree and it was worth every penny',
+      'The setup nobody sees — rigging a crane removal takes longer than the actual cut',
+      'When a tree is too close to the house for climbing — crane day',
+      'Picking a 3,000-pound log over a roof without scratching a shingle',
+      'The most expensive tree we ever craned out and what made it so complex',
+    ],
+    facts: [
+      'A 90-ton crane can lift a 5,000-pound tree section over a house with inch-level precision',
+      'Crane removal is actually SAFER than climbing for trees near structures — fewer things can go wrong',
+      'Crane rental costs $500-$2,000/day but can turn a 3-day climb job into a 4-hour operation',
+      'The crane operator and the climber communicate with hand signals — one wrong move and it is a disaster',
+      'Some trees are so hazardous that insurance companies require crane removal to cover the job',
+      'A skilled crane crew can remove 30 trees in a day that would take climbers two weeks',
+    ],
+    energy: 'Epic scale. Heavy machinery. Precision under pressure. This is the construction-meets-surgery of tree work.',
+    hookStyle: 'Big machinery reveal — the crane showing up, the scale of the tree, the impossibility of the situation.',
+    ctaStyle: 'Expert positioning — "This is why you hire pros. Got a tree that scares other companies? Call us."',
+  },
+  stump_grinding: {
+    angles: [
+      'This stump was here for 10 years — watch it disappear in 3 minutes',
+      'The most satisfying part of our job — stump grinding ASMR',
+      'Why you should never leave a stump — what grows underneath will shock you',
+      'Customer said "just leave the stump" — here is why we convinced them otherwise',
+      'Grinding a 4-foot oak stump down to nothing — the machine vs the wood',
+      'The stump that broke our grinder and what we learned',
+    ],
+    facts: [
+      'A left-behind stump can attract termites, carpenter ants, and fungi that spread to healthy trees nearby',
+      'Tree stumps can keep sending up new shoots for years — some species are almost impossible to kill without grinding',
+      'Stump grinding produces free mulch — most homeowners get 2-3 wheelbarrows of usable wood chips',
+      'The average stump grinder spins at 2,000 RPM and has carbide-tipped teeth that cost $8-15 each',
+      'A large stump can have roots extending 20+ feet underground — we grind 6-12 inches below grade',
+      'Stump grinding takes 15-45 minutes per stump depending on size — way faster than chemical removal which takes months',
+    ],
+    energy: 'Oddly satisfying destruction. ASMR vibes. The chip spray, the wood disappearing. People watch these on loop.',
+    hookStyle: 'Close-up of the grinder hitting wood — chips flying, the stump shrinking. "This one was here for 15 years."',
+    ctaStyle: 'Simple — "Got an ugly stump ruining your yard? We will make it disappear. Link in bio for a free quote."',
+  },
+  tree_health_tip: {
+    angles: [
+      'Your tree is dying and you dont even know it — 5 warning signs',
+      'That mushroom growing at the base of your tree? Here is what it really means',
+      'Why your tree is dropping leaves in July — it is not the heat',
+      'The one watering mistake that kills more trees than any disease',
+      'How to tell if that crack in your trunk is normal or a ticking time bomb',
+      'Stop putting mulch against your tree trunk — you are literally suffocating it',
+      'The right way to prune a branch vs the way that invites disease and rot',
+    ],
+    facts: [
+      'Mulch volcanoes kill more suburban trees than any disease — the moisture rots the bark and invites fungus',
+      'A healthy tree should have 5-10% of its canopy as new growth each year — less means something is wrong',
+      'Fungal conks at the base of a tree mean internal decay — by the time you see them, the tree may be 50% hollow',
+      'Overwatering kills more trees than underwatering — roots need air pockets in the soil to function',
+      'Improper pruning cuts dont heal — they seal over with bark but the wood underneath continues to rot for years',
+      'Trees can be stressed for 2-3 years before showing visible symptoms — early detection saves the tree and saves you money',
+    ],
+    energy: 'Helpful expert friend. "I see this every single week and it drives me crazy." Genuine care about trees.',
+    hookStyle: 'Walk up to a sick tree and point — "See that? Your tree is trying to tell you something."',
+    ctaStyle: 'Soft value — "Not sure about your trees? We do free tree health assessments. Drop us a DM."',
+  },
+  crew_spotlight: {
+    angles: [
+      'Meet our lead climber — 15 years in trees and still loves every minute',
+      'The new guy on his first big job — watch him earn his stripes',
+      'Why our crew has been together for 5 years — loyalty in this industry is rare',
+      'A day with our ground crew — the unsung heroes of every tree job',
+      'From military to arboriculture — how one of our guys found his calling in trees',
+      'Training day — watch our crew practice rigging, climbing, and emergency rescue',
+    ],
+    facts: [
+      'The average tree service company has 40-60% annual turnover — our crew stays because we treat them right',
+      'A certified arborist needs 3+ years of experience and has to pass a comprehensive exam',
+      'Tree climbing certifications require 1,000+ hours of supervised climbing before you can go solo',
+      'Our crew collectively has over 50 years of tree work experience',
+    ],
+    energy: 'Genuine, warm, proud. Show the people behind the chainsaws. Customers hire people, not logos.',
+    hookStyle: 'Introduce someone mid-action — already climbing, already cutting. "This is Mike. He has been doing this for 15 years."',
+    ctaStyle: 'Team pride — "This is the team that shows up to your property. Licensed, insured, and genuinely passionate."',
+  },
+  equipment_tour: {
+    angles: [
+      'Everything in our truck and what it costs — the $150,000 rig breakdown',
+      'This chainsaw costs $1,100 and here is why we wont use a cheaper one',
+      'The tools that keep us safe — climbing gear, rigging equipment, and why we spend more than most',
+      'Walk around our chipper — this machine turns a 40-foot tree into mulch in minutes',
+      'Our sharpening station — every blade gets razor sharp before we leave the shop',
+      'Why we run Stihl over Husqvarna — the great chainsaw debate',
+    ],
+    facts: [
+      'A professional-grade chainsaw costs $800-$1,500 and gets replaced every 2-3 years with heavy use',
+      'Tree climbing saddles cost $250-$600 and we inspect every stitch before each climb',
+      'Our brush chipper processes wood at 2,000 RPM — it can handle logs up to 18 inches in diameter',
+      'We carry $3,000-$5,000 worth of rope on every job — climbing rope, rigging rope, and bull rope',
+      'A single set of climbing spurs costs $200-$400 and the gaffs need resharpening every few weeks',
+    ],
+    energy: 'Gear nerd energy. Like a car guy showing off his build. Pride in quality tools and equipment.',
+    hookStyle: 'Open the truck bay doors or hold up a gnarly-looking tool. "Let me show you what $150K of tree equipment looks like."',
+    ctaStyle: 'Trust signal — "This is the equipment that shows up to your job. We invest in the best so you get the best results."',
+  },
+  seasonal_reminder: {
+    angles: [
+      'Spring is here — three things you need to check on your trees RIGHT NOW',
+      'Fall pruning guide — what to cut, what to leave, and what to absolutely never touch',
+      'Hurricane season prep — how to make your trees survive the next big storm',
+      'Winter is the best time to prune and here is why most people get it backwards',
+      'Summer heat stress — your trees need help and you probably dont realize it',
+      'Before the first freeze — the one thing that saves trees every winter',
+    ],
+    facts: [
+      'Late winter/early spring is the ideal pruning window for most deciduous trees — they are dormant so stress is minimal',
+      'Fall fertilization helps trees store nutrients for spring growth — it is like meal prepping for winter',
+      'Trees lose 30-40% more water during summer heat waves — deep watering once a week beats daily sprinkles',
+      'Storm-proofing your trees in spring costs a fraction of emergency removal after a storm',
+      'Dead branches are 6x more likely to fail in winter ice storms — removing them in fall is cheap prevention',
+      'Proper mulching in fall insulates tree roots and can prevent freeze damage in zones 6 and below',
+    ],
+    energy: 'Timely and helpful. "It is that time of year again." Create urgency around seasonal deadlines without being pushy.',
+    hookStyle: 'Calendar urgency — "If you have not done this by [month], you are already behind."',
+    ctaStyle: 'Helpful push — "Get ahead of the season. Book your [seasonal service] now before we are booked out."',
+  },
 };
 
 /** TikTok/YouTube video script generator — type-specific with real knowledge */
 export async function generateVideoScript(
   company: CompanyContext,
   videoType: string,
-  details: { what?: string; where?: string; duration?: string }
+  details: {
+    what?: string;
+    where?: string;
+    tone?: 'casual' | 'professional' | 'hype' | 'funny';
+    platform?: 'tiktok' | 'youtube_shorts' | 'instagram_reels';
+    duration?: 'short' | 'medium' | 'long';
+    customContext?: string;
+  }
 ): Promise<{ hook: string; script: string; shotList: string[]; hashtags: string[]; caption: string }> {
   const typeConfig = VIDEO_TYPE_PROMPTS[videoType] ?? VIDEO_TYPE_PROMPTS.satisfying_removal;
 
@@ -352,19 +483,54 @@ export async function generateVideoScript(
     ? `${company.city}, ${company.state}`
     : company.city ?? 'their local area';
 
+  // ── Tone voice instructions ──
+  const tone = details.tone ?? 'casual';
+  const toneVoice: Record<string, string> = {
+    casual: 'Sound like you\'re talking to a buddy at a barbecue who asked about your job. Use contractions, natural pauses ("..."), filler phrases ("honestly", "look", "here\'s the thing"), and spoken rhythm.',
+    professional: 'Sound confident and authoritative but still approachable. Use proper terminology, clear sentences, and a measured pace. Think TV host meets field expert. Still conversational, just polished.',
+    hype: 'HIGH ENERGY. You\'re fired up and want the viewer to feel it. Short punchy sentences. Exclamations. "LOOK at this!" "Are you KIDDING me?!" Fast pace, raw excitement, can\'t-contain-it energy.',
+    funny: 'Self-deprecating humor, unexpected punchlines, relatable comedy. "I know I look crazy right now but hear me out." Make them laugh AND learn. Think stand-up comedian who cuts trees for a living.',
+  };
+
+  // ── Platform + duration → word count ──
+  const platform = details.platform ?? 'tiktok';
+  const duration = details.duration ?? 'medium';
+  const baseWordCount: Record<string, [number, number]> = {
+    tiktok:          [60, 90],
+    youtube_shorts:  [90, 130],
+    instagram_reels: [70, 110],
+  };
+  const durationMultiplier: Record<string, number> = {
+    short: 0.6,
+    medium: 1.0,
+    long: 1.5,
+  };
+  const [baseMin, baseMax] = baseWordCount[platform] ?? [80, 120];
+  const mult = durationMultiplier[duration] ?? 1.0;
+  const wordMin = Math.round(baseMin * mult);
+  const wordMax = Math.round(baseMax * mult);
+  const secondsMin = Math.round(wordMin / 2.5);
+  const secondsMax = Math.round(wordMax / 2.5);
+
+  const platformName: Record<string, string> = {
+    tiktok: 'TikTok',
+    youtube_shorts: 'YouTube Shorts',
+    instagram_reels: 'Instagram Reels',
+  };
+
   const raw = await aiChat([
     {
       role: 'system',
-      content: `You write VIRAL TikTok/Reels scripts for tree service companies. You are a former arborist who became a content creator — you know the industry inside and out, and you know what gets views.
+      content: `You write VIRAL ${platformName[platform] ?? 'social media'} scripts for tree service companies. You are a former arborist who became a content creator — you know the industry inside and out, and you know what gets views.
 
-YOUR VOICE: Sound like you're talking to a buddy at a barbecue who asked about your job. Use contractions, natural pauses ("..."), filler phrases ("honestly", "look", "here's the thing", "no seriously", "I'm not even kidding"), and spoken rhythm. NEVER sound like a commercial, ad copy, or corporate script.
+YOUR VOICE: ${toneVoice[tone] ?? toneVoice.casual} NEVER sound like a commercial, ad copy, or corporate script.
 
 YOUR KNOWLEDGE: You are deeply knowledgeable about arboriculture, tree biology, equipment, safety, pricing, insurance, and local tree species. Weave in real expertise naturally — don't lecture, just drop knowledge casually like it's obvious to you.
 
 CRITICAL RULES:
 - Hook MUST stop the scroll in under 2 seconds (controversy, shock, curiosity gap, or visual payoff)
 - Write ONLY spoken words — zero stage directions, zero [brackets], zero formatting
-- 90-130 words (35-50 seconds at natural pace)
+- ${wordMin}-${wordMax} words (${secondsMin}-${secondsMax} seconds at natural pace)
 - Include at least ONE specific, surprising fact or number
 - Include at least ONE moment of genuine expertise that makes the viewer think "this person really knows their stuff"
 - End with a natural CTA — NOT "call us today" or "link in bio" corporate garbage
@@ -384,6 +550,7 @@ CREATIVE DIRECTION: Base this script around this angle — "${angle}"
 REAL FACTS TO WEAVE IN (use 1-2 naturally, don't force all of them):
 ${selectedFacts.map((f, i) => `${i + 1}. ${f}`).join('\n')}
 
+${details.customContext ? `ADDITIONAL CONTEXT FROM THE CREATOR: ${details.customContext}` : ''}
 ${details.what ? `Additional context: ${details.what}` : ''}
 
 Return ONLY valid JSON — no markdown, no backticks, no extra text:
@@ -392,7 +559,7 @@ Return ONLY valid JSON — no markdown, no backticks, no extra text:
   "script": "ONLY the words a person would say out loud. Start with the hook line, then the full script. NO labels like 'Hook:' or 'Script:'. NO hashtags. NO stage directions. NO brackets. NO 'Caption:'. Just pure conversational speech from start to finish, as if you're recording a voice memo. This text will be read aloud by text-to-speech so it must contain NOTHING except natural spoken words.",
   "shotList": ["shot 1 visual", "shot 2 visual", "shot 3 visual", "shot 4 visual", "shot 5 visual"],
   "hashtags": ["#tag1", "#tag2", "#tag3", "#tag4", "#tag5", "#tag6", "#tag7", "#tag8"],
-  "caption": "platform caption under 150 chars with 1-2 emoji"
+  "caption": "${platformName[platform] ?? 'social media'} caption under 150 chars with 1-2 emoji"
 }`,
     },
   ], { model: 'claude', maxTokens: 1000, temperature: 0.95 });
