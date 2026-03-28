@@ -27,6 +27,8 @@ import { startFacebookOAuth, isFacebookConnected } from '@/lib/meta';
 import { startTikTokOAuth, isTikTokConnected } from '@/lib/tiktok';
 import { startYouTubeOAuth, isYouTubeConnected } from '@/lib/youtube';
 import { setOpenRouterKey as setAIOpenRouterKey } from '@/lib/ai';
+import { Toast } from '@/components/ui/Toast';
+import { HelpTip } from '@/components/ui/HelpTip';
 
 const AI_KEY_STORAGE = 'EXPO_PUBLIC_OPENROUTER_API_KEY';
 const AI_MODEL_STORAGE = 'CANOPY_AI_MODEL_PREF';
@@ -243,6 +245,9 @@ export default function SettingsScreen() {
       await fetchProfile();
       setSavedVisible(true);
       setTimeout(() => setSavedVisible(false), 2000);
+      Toast.success('Settings saved!');
+    } catch (err: any) {
+      Toast.error('Failed to save settings. Please try again.');
     } finally {
       setSaving(false);
     }
@@ -357,13 +362,18 @@ export default function SettingsScreen() {
         {
           text: 'Send Reset Link',
           onPress: async () => {
-            const { error } = await supabase.auth.resetPasswordForEmail(
-              profile.email
-            );
-            if (error) {
-              crossAlert('Error', error.message);
-            } else {
-              crossAlert('Sent', 'Check your email for the reset link.');
+            try {
+              const { error } = await supabase.auth.resetPasswordForEmail(
+                profile.email
+              );
+              if (error) {
+                crossAlert('Error', error.message);
+              } else {
+                Toast.success('Password updated!');
+                crossAlert('Sent', 'Check your email for the reset link.');
+              }
+            } catch (err: any) {
+              Toast.error('Failed to change password. Please try again.');
             }
           },
         },
@@ -622,6 +632,7 @@ export default function SettingsScreen() {
               ))}
             </View>
           </View>
+          <HelpTip tip="'Fast' uses Claude Haiku — quick responses, great for most tasks. 'Claude' uses Claude Sonnet — smarter, better for complex scripts and strategies. 'GPT-4o' uses OpenAI — alternative option." aiTip="For video scripts and estimates, Claude gives the best results." />
           <Divider />
           <TouchableOpacity
             style={[styles.row, styles.aiSaveRow]}

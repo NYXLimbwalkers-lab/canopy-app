@@ -24,6 +24,8 @@ import { useAuthStore } from '@/lib/stores/authStore';
 import { supabase } from '@/lib/supabase';
 import { aiChat, isAIConfigured } from '@/lib/ai';
 import { speak, speakPrompt } from '@/lib/tts';
+import { Toast } from '@/components/ui/Toast';
+import { HelpTip, GuidanceCard } from '@/components/ui/HelpTip';
 import { router } from 'expo-router';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
@@ -990,7 +992,7 @@ Rules:
       if (estimate) {
         onCreated(estimate);
         handleClose();
-        Alert.alert('Estimate Created!', `${formatCurrency(total)} estimate saved as draft. Generate a PDF to send to your customer.`);
+        Toast.success(`Estimate saved! ${formatCurrency(total)} — ready to send.`);
       }
     } catch (err: any) {
       Alert.alert('Error', err.message || 'Failed to save estimate');
@@ -1162,15 +1164,18 @@ Rules:
                 )}
               </TouchableOpacity>
 
-              <View style={voiceStyles.tipsCard}>
-                <Text style={voiceStyles.tipsTitle}>💡 Tips for better estimates</Text>
-                <Text style={voiceStyles.tipItem}>• Mention the tree species (oak, pine, maple...)</Text>
-                <Text style={voiceStyles.tipItem}>• Include the height or size</Text>
-                <Text style={voiceStyles.tipItem}>• Note any hazards (power lines, structures, slopes)</Text>
-                <Text style={voiceStyles.tipItem}>• Say if it's hardwood or softwood</Text>
-                <Text style={voiceStyles.tipItem}>• Include cleanup preferences</Text>
-                <Text style={voiceStyles.tipItem}>• Mention your price or let AI suggest one</Text>
-              </View>
+              <GuidanceCard
+                title="How to get an accurate estimate"
+                icon="🌳"
+                steps={[
+                  'Say what work needs doing — "Remove a big oak" or "Trim three pines"',
+                  'Mention the height — "About 40 feet tall" (this changes the price a LOT)',
+                  'Note hazards — near the house? Power lines? Steep hill? Tight backyard?',
+                  'Say where the tree can fall — open yard is cheaper, tight spaces cost more',
+                  'Mention cleanup — haul away, leave wood, chip on site?',
+                  'Say a price or let AI suggest one based on industry rates',
+                ]}
+              />
             </>
           ) : (
             <>
@@ -2121,7 +2126,7 @@ export default function EstimatesScreen() {
 
   const refresh = useCallback(async () => {
     setRefreshing(true);
-    try { await fetchEstimates(); } catch {}
+    try { await fetchEstimates(); } catch { Toast.error('Failed to refresh estimates.'); }
     finally { setRefreshing(false); }
   }, [fetchEstimates]);
 

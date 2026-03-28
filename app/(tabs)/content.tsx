@@ -29,6 +29,8 @@ import { VIDEO_TEMPLATES, BACKGROUND_MUSIC, AMBIENT_SOUNDS } from '@/lib/video/t
 import { SceneTimeline } from '@/components/video/SceneTimeline';
 import { SceneEditor } from '@/components/video/SceneEditor';
 import { StepProgress } from '@/components/video/StepProgress';
+import { Toast } from '@/components/ui/Toast';
+import { GuidanceCard } from '@/components/ui/HelpTip';
 
 // ─── Web Video Player (uses native HTML5 <video> on web) ────────────────────
 function WebVideoPlayer({ url, poster }: { url: string; poster?: string | null }) {
@@ -742,7 +744,8 @@ export default function ContentScreen() {
         caption: result.caption,
       });
     } catch {
-      setScript('Error generating script. Check your connection and try again.');
+      Toast.error('Script generation failed. Check your internet connection and AI key in Settings.');
+      setScript(null);
       setScriptDisplay(null);
     } finally {
       setGeneratingScript(false);
@@ -1098,6 +1101,17 @@ export default function ContentScreen() {
           Pick a video type, customize your style, and let AI write a viral script. Higher 🔥 = more viral potential.
         </Text>
       </View>
+
+      <GuidanceCard
+        title="How video creation works"
+        icon="🎬"
+        steps={[
+          'Pick a video type below — each one is designed for tree service content',
+          'Choose your tone (casual, pro, funny) and platform (TikTok, YouTube, Reels)',
+          'AI writes a script — you can edit it or regenerate',
+          'Open the Video Editor to customize scenes, music, and captions — or hit Auto-Generate for a quick video',
+        ]}
+      />
 
       {VIDEO_CATEGORIES.map(cat => (
         <View key={cat.label} style={s.categorySection}>

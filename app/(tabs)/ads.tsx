@@ -24,6 +24,8 @@ import { ScoreCard } from '@/components/ui/ScoreCard';
 import { useAuthStore } from '@/lib/stores/authStore';
 import { supabase } from '@/lib/supabase';
 import { crossAlert } from '@/lib/crossAlert';
+import { Toast } from '@/components/ui/Toast';
+import { GuidanceCard } from '@/components/ui/HelpTip';
 
 type AdPlatform = 'google' | 'facebook' | 'google_ads' | 'facebook_ads' | 'local_services' | 'other';
 type CampaignStatus = 'active' | 'paused' | 'ended' | 'draft';
@@ -523,11 +525,7 @@ export default function AdsScreen() {
   };
 
   const handleNewCampaign = () => {
-    crossAlert(
-      'Add Campaign',
-      'Campaign creation is managed through your Google Ads or Facebook Ads account. Connect your ad account above to automatically import your campaigns.',
-      [{ text: 'OK' }]
-    );
+    Toast.info('Campaigns are managed in your Google Ads or Facebook Ads dashboard. Connect your account above to import them here.');
   };
 
   // ── LSA handlers ──
