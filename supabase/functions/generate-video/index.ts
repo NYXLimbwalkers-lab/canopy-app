@@ -174,6 +174,47 @@ async function uploadAudioToStorage(
   return urlData?.publicUrl ?? null
 }
 
+// Extract visual keywords from script text to improve Pexels footage search
+function extractVisualKeywords(script: string, videoType: string): string {
+  const text = script.toLowerCase()
+
+  // Map common tree service concepts to good stock footage search terms
+  const conceptMap: Record<string, string[]> = {
+    'chainsaw': ['chainsaw cutting wood'],
+    'stump': ['stump grinding wood chips'],
+    'crane': ['crane lifting heavy equipment'],
+    'storm': ['storm damage fallen tree'],
+    'roof': ['tree near house rooftop'],
+    'climb': ['tree climbing arborist'],
+    'truck': ['utility truck forestry'],
+    'property': ['beautiful yard landscaping'],
+    'dead tree': ['dead tree bark'],
+    'pruning': ['tree pruning branch cutting'],
+    'firewood': ['chopping firewood logs'],
+    'roots': ['tree roots ground soil'],
+    'oak': ['large oak tree'],
+    'pine': ['pine tree forest'],
+    'palm': ['palm tree tropical'],
+    'emergency': ['emergency response urgent'],
+    'crew': ['construction workers team outdoor'],
+    'equipment': ['heavy equipment tools outdoor'],
+    'mulch': ['wood chips mulch garden'],
+    'safety': ['safety gear helmet worker'],
+  }
+
+  // Find concepts mentioned in the script
+  const matches: string[] = []
+  for (const [keyword, searches] of Object.entries(conceptMap)) {
+    if (text.includes(keyword)) {
+      matches.push(searches[0])
+    }
+  }
+
+  // Return the best match or a contextual default
+  if (matches.length > 0) return matches[0]
+  return VIDEO_TYPE_SEARCH[videoType] ?? 'tree service outdoor work'
+}
+
 async function processVideo(
   supabase: ReturnType<typeof createClient>,
   videoId: string,
@@ -279,24 +320,52 @@ async function processVideo(
     } catch {}
   }
 
-  // ── Step 2: Pexels stock footage ──────────────────────────────────────────
+  // ── Step 2: Pexels stock footage (smart multi-query search) ──────────────
   const videoClips: string[] = []
+  // Also check for user-uploaded footage clips
+  const { data: userClips } = await supabase.storage
+    .from('generated-videos')
+    .list(`${videoId}/clips`, { limit: 10 })
+  if (userClips && userClips.length > 0) {
+    for (const clip of userClips) {
+      const { data: urlData } = supabase.storage
+        .from('generated-videos')
+        .getPublicUrl(`${videoId}/clips/${clip.name}`)
+      if (urlData?.publicUrl) videoClips.push(urlData.publicUrl)
+    }
+  }
 
-  if (pexelsKey) {
-    const query = VIDEO_TYPE_SEARCH[videoType] ?? 'tree service arborist'
-    const clipCount = pacing === 'fast' ? 8 : pacing === 'slow' ? 3 : 5
-    const pexelsResp = await fetch(
-      `https://api.pexels.com/videos/search?query=${encodeURIComponent(query)}&per_page=${clipCount}&orientation=portrait&size=medium`,
-      { headers: { Authorization: pexelsKey } },
-    )
+  if (pexelsKey && videoClips.length === 0) {
+    const maxClips = pacing === 'fast' ? 6 : pacing === 'slow' ? 3 : 4
 
-    if (pexelsResp.ok) {
-      const pexelsData = await pexelsResp.json()
-      const maxClips = pacing === 'fast' ? 7 : pacing === 'slow' ? 3 : 4
-      for (const video of (pexelsData.videos ?? []).slice(0, maxClips)) {
-        const hdFile = video.video_files?.find((f: any) => f.quality === 'hd')
-          ?? video.video_files?.[0]
-        if (hdFile?.link) videoClips.push(hdFile.link)
+    // Extract visual keywords from the script for smarter search
+    const scriptKeywords = extractVisualKeywords(spokenText, videoType)
+
+    // Search with multiple queries for variety
+    const queries = [
+      scriptKeywords,
+      VIDEO_TYPE_SEARCH[videoType] ?? 'tree service arborist',
+    ]
+
+    for (const query of queries) {
+      if (videoClips.length >= maxClips) break
+      const remaining = maxClips - videoClips.length
+      const pexelsResp = await fetch(
+        `https://api.pexels.com/videos/search?query=${encodeURIComponent(query)}&per_page=${remaining + 2}&orientation=portrait&size=medium`,
+        { headers: { Authorization: pexelsKey } },
+      )
+
+      if (pexelsResp.ok) {
+        const pexelsData = await pexelsResp.json()
+        for (const video of (pexelsData.videos ?? []).slice(0, remaining)) {
+          const bestFile = video.video_files?.find((f: any) => f.quality === 'sd' && f.height >= 720)
+            ?? video.video_files?.find((f: any) => f.quality === 'sd')
+            ?? video.video_files?.find((f: any) => f.quality === 'hd')
+            ?? video.video_files?.[0]
+          if (bestFile?.link && !videoClips.includes(bestFile.link)) {
+            videoClips.push(bestFile.link)
+          }
+        }
       }
     }
   }
@@ -305,19 +374,32 @@ async function processVideo(
   const wordCount = spokenText.split(/\s+/).length
   const estimatedDuration = Math.max(20, Math.min(60, Math.round(wordCount / 2.5)))
 
-  // ── Step 3: Render via Creatomate (cloud) or fallback to self-hosted server ──
+  // ── Step 3: Render via Creatomate (cloud) → fallback to self-hosted FFmpeg ──
+  let rendered = false
+
   if (creatomateKey) {
-    await renderViaCreatomate(
-      supabase, creatomateKey, videoId, videoClips, audioUrl,
-      spokenText, companyName, estimatedDuration, supabaseUrl, captionStyle,
-    )
-  } else if (renderServerUrl) {
+    try {
+      await renderViaCreatomate(
+        supabase, creatomateKey, videoId, videoClips, audioUrl,
+        spokenText, companyName, estimatedDuration, supabaseUrl, captionStyle,
+      )
+      rendered = true
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err)
+      console.error('Creatomate failed, falling back to self-hosted:', msg)
+    }
+  }
+
+  if (!rendered && renderServerUrl) {
     await renderViaSelfHosted(
       supabase, renderServerUrl, videoId, videoClips, audioUrl,
       spokenText, companyName, estimatedDuration, supabaseUrl,
     )
-  } else {
-    throw new Error('No render backend configured. Set CREATOMATE_API_KEY or RENDER_SERVER_URL in Edge Function Secrets.')
+    rendered = true
+  }
+
+  if (!rendered) {
+    throw new Error('No render backend available. Creatomate credits exhausted and no RENDER_SERVER_URL configured.')
   }
 }
 

@@ -56,15 +56,16 @@ app.post('/render', requireApiKey, async (req, res) => {
   try {
     const supabase = createClient(supabaseUrl, supabaseKey);
 
-    // Download all assets in parallel
+    // Download all assets — limit clips to 3 max for low-RAM environments
     const downloads = [];
+    const clipsToUse = videoClips.slice(0, 3);
 
     // Download video clips
     const clipPaths = [];
-    for (let i = 0; i < videoClips.length; i++) {
+    for (let i = 0; i < clipsToUse.length; i++) {
       const clipPath = path.join(jobDir, `clip_${i}.mp4`);
       clipPaths.push(clipPath);
-      downloads.push(downloadFile(videoClips[i], clipPath));
+      downloads.push(downloadFile(clipsToUse[i], clipPath));
     }
 
     // Download audio if available
@@ -206,12 +207,14 @@ function normalizeClip(input, output, duration) {
       .videoCodec('libx264')
       .audioCodec('aac')
       .outputOptions([
-        '-vf', 'scale=1080:1920:force_original_aspect_ratio=decrease,pad=1080:1920:(ow-iw)/2:(oh-ih)/2:black,setsar=1',
-        '-r', '30',
+        // Render at 540x960 (half of 1080x1920) to fit in 512MB RAM
+        '-vf', 'scale=540:960:force_original_aspect_ratio=decrease,pad=540:960:(ow-iw)/2:(oh-ih)/2:black,setsar=1',
+        '-r', '24',
         '-pix_fmt', 'yuv420p',
         '-an',  // Strip audio from clips — we use voiceover
-        '-preset', 'fast',
-        '-crf', '23',
+        '-preset', 'ultrafast',
+        '-crf', '28',
+        '-threads', '1',
       ])
       .output(output)
       .on('end', resolve)
@@ -249,16 +252,16 @@ function composeFinal(videoPath, audioPath, captionSegments, watermarkText, tota
     const filters = [];
     let lastLabel = '0:v';
 
-    // Add watermark text (top-left)
+    // Add watermark text (top-left) — font sizes scaled for 540x960
     if (watermarkText) {
       const escaped = watermarkText.replace(/'/g, "'\\''").replace(/:/g, '\\:');
       filters.push(
-        `[${lastLabel}]drawtext=text='${escaped}':fontsize=28:fontcolor=white@0.8:x=30:y=40:fontfile=/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf:borderw=2:bordercolor=black@0.5[wm]`
+        `[${lastLabel}]drawtext=text='${escaped}':fontsize=16:fontcolor=white@0.8:x=15:y=20:fontfile=/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf:borderw=1:bordercolor=black@0.5[wm]`
       );
       lastLabel = 'wm';
     }
 
-    // Add caption segments (centered bottom)
+    // Add caption segments (centered bottom) — font sizes scaled for 540x960
     if (captionSegments?.length) {
       captionSegments.forEach((seg, i) => {
         const escaped = seg.text.replace(/'/g, "'\\''").replace(/:/g, '\\:');
@@ -266,7 +269,7 @@ function composeFinal(videoPath, audioPath, captionSegments, watermarkText, tota
         const endTime = startTime + (seg.duration || 5);
         const outLabel = `cap${i}`;
         filters.push(
-          `[${lastLabel}]drawtext=text='${escaped}':fontsize=42:fontcolor=white:x=(w-text_w)/2:y=h-200:fontfile=/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf:borderw=3:bordercolor=black@0.7:enable='between(t,${startTime},${endTime})'[${outLabel}]`
+          `[${lastLabel}]drawtext=text='${escaped}':fontsize=24:fontcolor=white:x=(w-text_w)/2:y=h-100:fontfile=/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf:borderw=2:bordercolor=black@0.7:enable='between(t,${startTime},${endTime})'[${outLabel}]`
         );
         lastLabel = outLabel;
       });
@@ -276,12 +279,13 @@ function composeFinal(videoPath, audioPath, captionSegments, watermarkText, tota
       cmd = cmd.complexFilter(filters, lastLabel);
     }
 
-    // Output settings
+    // Output settings — optimized for low-RAM environments (512MB)
     const outputOpts = [
-      '-preset', 'fast',
-      '-crf', '23',
+      '-preset', 'ultrafast',
+      '-crf', '28',
       '-pix_fmt', 'yuv420p',
       '-movflags', '+faststart',
+      '-threads', '1',
       `-t`, `${totalDuration || 30}`,
     ];
 
