@@ -14,7 +14,9 @@ function fetchWithTimeout(url: string, opts: RequestInit = {}, timeoutMs = 15000
 
 // Progress reporter — updates DB so client can show step-by-step progress
 async function updateProgress(sb: any, id: string, step: string, pct: number) {
-  await sb.from('generated_videos').update({ progress_step: step, progress_percent: pct }).eq('id', id).catch(() => {})
+  try {
+    await sb.from('generated_videos').update({ progress_step: step, progress_percent: pct }).eq('id', id)
+  } catch {}
 }
 
 const corsHeaders = {
@@ -265,7 +267,6 @@ async function processVideo(
   let audioUrl: string | null = null
 
   // Ensure the storage bucket exists for audio uploads
-  await supabase.storage.createBucket('generated-videos', { public: true }).catch(() => {})
 
   // Try ElevenLabs first (premium quality voice)
   if (elevenLabsKey) {
