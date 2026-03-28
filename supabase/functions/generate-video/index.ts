@@ -295,7 +295,12 @@ async function processVideo(
           body: JSON.stringify({
             text: spokenText,
             model_id: 'eleven_multilingual_v2',
-            voice_settings: { stability: 0.35, similarity_boost: 0.6, style: 0.15, use_speaker_boost: true },
+            voice_settings: {
+              stability: 0.4,          // Slightly more stable for professional feel
+              similarity_boost: 0.75,   // Higher voice fidelity
+              style: 0.2,              // Natural conversational style
+              use_speaker_boost: true,  // Enhanced clarity
+            },
           }),
         },
       )
@@ -367,8 +372,8 @@ async function processVideo(
   }
 
   if (pexelsKey && videoClips.length === 0) {
-    // Limit clips — render server has 512MB RAM, can only handle 2-3 clips
-    const maxClips = pacing === 'fast' ? 3 : 2
+    // Creatomate handles rendering — use more clips for variety
+    const maxClips = pacing === 'fast' ? 6 : pacing === 'slow' ? 3 : 4
 
     // Extract visual keywords from the script for smarter search
     const scriptKeywords = extractVisualKeywords(spokenText, videoType)
@@ -390,9 +395,10 @@ async function processVideo(
       if (pexelsResp.ok) {
         const pexelsData = await pexelsResp.json()
         for (const video of (pexelsData.videos ?? []).slice(0, remaining)) {
-          const bestFile = video.video_files?.find((f: any) => f.quality === 'sd' && f.height >= 720)
-            ?? video.video_files?.find((f: any) => f.quality === 'sd')
+          // Use HD quality — Creatomate handles rendering so we want the best source footage
+          const bestFile = video.video_files?.find((f: any) => f.quality === 'hd' && f.height >= 1080)
             ?? video.video_files?.find((f: any) => f.quality === 'hd')
+            ?? video.video_files?.find((f: any) => f.quality === 'sd' && f.height >= 720)
             ?? video.video_files?.[0]
           if (bestFile?.link && !videoClips.includes(bestFile.link)) {
             videoClips.push(bestFile.link)
@@ -449,115 +455,259 @@ async function renderViaCreatomate(
   supabaseUrl: string,
   captionStyle: string = 'bold',
 ) {
-  // Build a Creatomate source JSON (dynamic template)
-  // 9:16 portrait video with stock clips, voiceover, captions, and watermark
+  // ═══════════════════════════════════════════════════════════════════════════
+  // CINEMATIC VIDEO COMPOSITION — Professional-grade output
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  const INTRO_DUR = 2.5    // Intro card duration
+  const OUTRO_DUR = 3      // Outro card duration
+  const FADE = 0.5         // Crossfade between clips
+  const fullDuration = INTRO_DUR + totalDuration + OUTRO_DUR
+
   const clipDuration = videoClips.length > 0
     ? totalDuration / videoClips.length
     : totalDuration
 
-  // Build elements array: video clips as composition, then text overlays
-  const clipElements = videoClips.map((url, i) => ({
-    type: 'video',
-    source: url,
-    trim_start: 0,
-    trim_duration: clipDuration,
-    // Each clip plays sequentially
-    time: i * clipDuration,
-    duration: clipDuration,
-  }))
+  const elements: any[] = []
 
-  // Caption: split into timed segments
+  // ── 1. INTRO CARD — Company name + video type with cinematic fade-in ────
+  elements.push({
+    type: 'composition',
+    time: 0,
+    duration: INTRO_DUR,
+    elements: [
+      // Dark gradient background
+      {
+        type: 'shape',
+        path: 'M 0 0 L 1080 0 L 1080 1920 L 0 1920 Z',
+        fill_color: '#0A0F0D',
+      },
+      // Company name — large, fades in
+      {
+        type: 'text',
+        text: companyName.toUpperCase(),
+        y: '42%',
+        width: '80%',
+        x_alignment: '50%',
+        y_alignment: '50%',
+        font_family: 'Montserrat',
+        font_weight: '800',
+        font_size: '10 vmin',
+        fill_color: '#FFFFFF',
+        letter_spacing: '0.5 vmin',
+        enter: { effect: 'fade', duration: 0.8 },
+      },
+      // Accent line
+      {
+        type: 'shape',
+        path: 'M 390 990 L 690 990',
+        stroke_color: '#40916C',
+        stroke_width: 4,
+        enter: { effect: 'fade', duration: 0.5, delay: 0.4 },
+      },
+      // Tagline
+      {
+        type: 'text',
+        text: 'Professional Tree Service',
+        y: '55%',
+        width: '80%',
+        x_alignment: '50%',
+        y_alignment: '50%',
+        font_family: 'Inter',
+        font_weight: '400',
+        font_size: '4.5 vmin',
+        fill_color: 'rgba(255,255,255,0.6)',
+        letter_spacing: '0.8 vmin',
+        enter: { effect: 'fade', duration: 0.6, delay: 0.6 },
+      },
+    ],
+  })
+
+  // ── 2. VIDEO CLIPS — Ken Burns zoom + crossfade transitions ─────────────
+  videoClips.forEach((url, i) => {
+    const clipStart = INTRO_DUR + (i * clipDuration)
+    // Alternate between zoom-in and slight pan for cinematic feel
+    const isZoomIn = i % 2 === 0
+    const scaleFrom = isZoomIn ? '100%' : '115%'
+    const scaleTo = isZoomIn ? '120%' : '100%'
+    // Slight vertical drift
+    const yFrom = isZoomIn ? '50%' : '45%'
+    const yTo = isZoomIn ? '45%' : '52%'
+
+    elements.push({
+      type: 'video',
+      source: url,
+      time: clipStart,
+      duration: clipDuration,
+      trim_start: 0,
+      trim_duration: clipDuration,
+      // Fill the 9:16 frame — crop to fit, no letterboxing
+      fit: 'cover',
+      // Ken Burns: animate scale + position
+      animations: [
+        {
+          easing: 'linear',
+          type: 'scale',
+          scope: 'element',
+          start_scale: scaleFrom,
+          end_scale: scaleTo,
+          fade: false,
+        },
+      ],
+      // Crossfade in (except first clip)
+      enter: i > 0 ? { effect: 'crossfade', duration: FADE } : { effect: 'fade', duration: 0.3 },
+    })
+  })
+
+  // ── 3. DARK GRADIENT OVERLAY (bottom) — Makes captions readable ─────────
+  elements.push({
+    type: 'shape',
+    path: 'M 0 1400 L 1080 1400 L 1080 1920 L 0 1920 Z',
+    fill_color: 'linear-gradient(rgba(0,0,0,0) 0%, rgba(0,0,0,0.7) 100%)',
+    time: INTRO_DUR,
+    duration: totalDuration,
+  })
+
+  // ── 4. ANIMATED CAPTIONS — Phrase-by-phrase with pop-in effect ──────────
   const sentences = spokenText.split(/(?<=[.!?])\s+/).filter(s => s.length > 5)
-  const maxSegs = Math.min(sentences.length, 6)
+  const maxSegs = Math.min(sentences.length, 8)
   const segDuration = totalDuration / maxSegs
 
-  // Caption style presets
-  const captionPresets: Record<string, Record<string, string>> = {
+  const captionPresets: Record<string, any> = {
     bold: {
       font_family: 'Montserrat',
       font_weight: '800',
       font_size: '7 vmin',
       fill_color: '#ffffff',
       stroke_color: '#000000',
-      stroke_width: '1.5 vmin',
-      background_color: 'rgba(0,0,0,0.4)',
-      background_x_padding: '30%',
-      background_y_padding: '15%',
-      background_border_radius: '30%',
+      stroke_width: '1.2 vmin',
     },
     minimal: {
       font_family: 'Inter',
       font_weight: '500',
-      font_size: '5 vmin',
-      fill_color: 'rgba(255,255,255,0.9)',
-      stroke_color: 'rgba(0,0,0,0.6)',
-      stroke_width: '0.8 vmin',
+      font_size: '5.5 vmin',
+      fill_color: '#ffffff',
+      stroke_color: 'rgba(0,0,0,0.5)',
+      stroke_width: '0.6 vmin',
     },
     subtitle: {
       font_family: 'Inter',
       font_weight: '600',
-      font_size: '5.5 vmin',
+      font_size: '5 vmin',
       fill_color: '#ffffff',
-      stroke_color: '#000000',
-      stroke_width: '0.5 vmin',
-      background_color: 'rgba(0,0,0,0.7)',
-      background_x_padding: '20%',
-      background_y_padding: '10%',
-      background_border_radius: '10%',
+      background_color: 'rgba(0,0,0,0.75)',
+      background_x_padding: '25%',
+      background_y_padding: '12%',
+      background_border_radius: '8%',
     },
   }
   const capStyle = captionPresets[captionStyle] ?? captionPresets.bold
 
-  const captionElements = sentences.slice(0, maxSegs).map((text, i) => ({
-    type: 'text',
-    text: text.length > 80 ? text.slice(0, 77) + '...' : text,
-    time: i * segDuration,
-    duration: segDuration,
-    y: captionStyle === 'subtitle' ? '92%' : '85%',
-    width: '90%',
-    x_alignment: '50%',
-    ...capStyle,
-  }))
+  sentences.slice(0, maxSegs).forEach((text, i) => {
+    const capText = text.length > 70 ? text.slice(0, 67) + '...' : text
+    elements.push({
+      type: 'text',
+      text: capText,
+      time: INTRO_DUR + (i * segDuration),
+      duration: segDuration,
+      y: '82%',
+      width: '88%',
+      x_alignment: '50%',
+      y_alignment: '50%',
+      line_height: '140%',
+      ...capStyle,
+      // Animated entrance/exit
+      enter: { effect: 'text-slide', duration: 0.3, split: 'word' },
+      exit: { effect: 'fade', duration: 0.2 },
+    })
+  })
 
-  // Watermark
-  const watermarkElement = {
+  // ── 5. WATERMARK — Subtle company name, top-left ────────────────────────
+  elements.push({
     type: 'text',
     text: companyName,
-    time: 0,
+    time: INTRO_DUR,
     duration: totalDuration,
-    x: '5%',
+    x: '4%',
     y: '3%',
     font_family: 'Montserrat',
-    font_weight: '700',
-    font_size: '4 vmin',
-    fill_color: 'rgba(255,255,255,0.8)',
-    stroke_color: 'rgba(0,0,0,0.5)',
-    stroke_width: '0.5 vmin',
-  }
+    font_weight: '600',
+    font_size: '3.5 vmin',
+    fill_color: 'rgba(255,255,255,0.5)',
+    stroke_color: 'rgba(0,0,0,0.3)',
+    stroke_width: '0.3 vmin',
+  })
 
-  const elements: any[] = [
-    ...clipElements,
-    watermarkElement,
-    ...captionElements,
-  ]
+  // ── 6. OUTRO CARD — CTA with company name ──────────────────────────────
+  elements.push({
+    type: 'composition',
+    time: INTRO_DUR + totalDuration,
+    duration: OUTRO_DUR,
+    elements: [
+      {
+        type: 'shape',
+        path: 'M 0 0 L 1080 0 L 1080 1920 L 0 1920 Z',
+        fill_color: '#0A0F0D',
+      },
+      {
+        type: 'text',
+        text: companyName.toUpperCase(),
+        y: '38%',
+        width: '80%',
+        x_alignment: '50%',
+        y_alignment: '50%',
+        font_family: 'Montserrat',
+        font_weight: '800',
+        font_size: '9 vmin',
+        fill_color: '#FFFFFF',
+        enter: { effect: 'fade', duration: 0.6 },
+      },
+      {
+        type: 'text',
+        text: 'Call for a FREE Estimate',
+        y: '52%',
+        width: '80%',
+        x_alignment: '50%',
+        y_alignment: '50%',
+        font_family: 'Montserrat',
+        font_weight: '700',
+        font_size: '6 vmin',
+        fill_color: '#40916C',
+        enter: { effect: 'fade', duration: 0.5, delay: 0.3 },
+      },
+      {
+        type: 'text',
+        text: '🌳 Licensed & Insured · Available 24/7',
+        y: '62%',
+        width: '80%',
+        x_alignment: '50%',
+        y_alignment: '50%',
+        font_family: 'Inter',
+        font_weight: '400',
+        font_size: '4 vmin',
+        fill_color: 'rgba(255,255,255,0.6)',
+        enter: { effect: 'fade', duration: 0.5, delay: 0.6 },
+      },
+    ],
+  })
 
-  // Add audio track if we have a voiceover URL
+  // ── 7. AUDIO — Voiceover (starts after intro) ──────────────────────────
   if (audioUrl) {
     elements.push({
       type: 'audio',
       source: audioUrl,
-      time: 0,
+      time: INTRO_DUR, // Start after intro card
       duration: totalDuration,
+      volume: '100%',
     })
   }
-  // No fallback — Creatomate doesn't support built-in TTS on audio elements
-  // No fallback — Creatomate doesn't support built-in TTS on audio elements
 
   const source = {
     output_format: 'mp4',
     width: 1080,
     height: 1920,
-    duration: totalDuration,
+    frame_rate: 30,
+    duration: fullDuration,
     elements,
   }
 
