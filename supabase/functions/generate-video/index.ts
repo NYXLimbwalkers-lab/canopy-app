@@ -5,6 +5,13 @@
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 
+// Fetch with timeout — prevents hanging on slow external APIs
+function fetchWithTimeout(url: string, opts: RequestInit = {}, timeoutMs = 15000): Promise<Response> {
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), timeoutMs)
+  return fetch(url, { ...opts, signal: controller.signal }).finally(() => clearTimeout(timer))
+}
+
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
@@ -259,7 +266,7 @@ async function processVideo(
       // Fetch available voices from the user's account and pick one at random
       let voiceId = 'TxGEqnHWrfWFTfGW9XjX' // default fallback voice
       try {
-        const voicesResp = await fetch('https://api.elevenlabs.io/v1/voices', {
+        const voicesResp = await fetchWithTimeout('https://api.elevenlabs.io/v1/voices', {
           headers: { 'xi-api-key': elevenLabsKey },
         })
         if (voicesResp.ok) {
@@ -272,7 +279,7 @@ async function processVideo(
         }
       } catch {}
 
-      const ttsResp = await fetch(
+      const ttsResp = await fetchWithTimeout(
         `https://api.elevenlabs.io/v1/text-to-speech/${voiceId}`,
         {
           method: 'POST',
@@ -298,7 +305,7 @@ async function processVideo(
       const audioChunks: ArrayBuffer[] = []
 
       for (const chunk of chunks) {
-        const gResp = await fetch(
+        const gResp = await fetchWithTimeout(
           `https://translate.google.com/translate_tts?ie=UTF-8&client=tw-ob&tl=en&q=${encodeURIComponent(chunk)}`,
         )
         if (gResp.ok) {
@@ -317,7 +324,19 @@ async function processVideo(
         }
         audioUrl = await uploadAudioToStorage(supabase, videoId, merged.buffer)
       }
-    } catch {}
+    } catch (gErr) {
+      console.error('Google TTS fallback failed:', gErr instanceof Error ? gErr.message : gErr)
+    }
+  }
+
+  // Log audio status for debugging
+  if (!audioUrl) {
+    console.warn(`[${videoId}] WARNING: No audio generated — video will be silent`)
+    // Store a note in the DB so the user knows
+    await supabase
+      .from('generated_videos')
+      .update({ error_message: 'Audio generation failed — video may be silent. ElevenLabs and Google TTS both unavailable.' })
+      .eq('id', videoId)
   }
 
   // ── Step 2: Pexels stock footage (smart multi-query search) ──────────────
@@ -350,7 +369,7 @@ async function processVideo(
     for (const query of queries) {
       if (videoClips.length >= maxClips) break
       const remaining = maxClips - videoClips.length
-      const pexelsResp = await fetch(
+      const pexelsResp = await fetchWithTimeout(
         `https://api.pexels.com/videos/search?query=${encodeURIComponent(query)}&per_page=${remaining + 2}&orientation=portrait&size=medium`,
         { headers: { Authorization: pexelsKey } },
       )
@@ -532,7 +551,7 @@ async function renderViaCreatomate(
 
   // Submit render to Creatomate
   // Creatomate expects `source` as a JSON string within the request body
-  const renderResp = await fetch('https://api.creatomate.com/v1/renders', {
+  const renderResp = await fetchWithTimeout('https://api.creatomate.com/v1/renders', {
     method: 'POST',
     headers: {
       'Authorization': `Bearer ${apiKey}`,
