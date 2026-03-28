@@ -367,7 +367,8 @@ async function processVideo(
   }
 
   if (pexelsKey && videoClips.length === 0) {
-    const maxClips = pacing === 'fast' ? 6 : pacing === 'slow' ? 3 : 4
+    // Limit clips — render server has 512MB RAM, can only handle 2-3 clips
+    const maxClips = pacing === 'fast' ? 3 : 2
 
     // Extract visual keywords from the script for smarter search
     const scriptKeywords = extractVisualKeywords(spokenText, videoType)
