@@ -12,6 +12,20 @@ function fetchWithTimeout(url: string, opts: RequestInit = {}, timeoutMs = 15000
   return fetch(url, { ...opts, signal: controller.signal }).finally(() => clearTimeout(timer))
 }
 
+// Progress reporter — updates DB so client can show step-by-step progress
+async function updateProgress(
+  supabase: ReturnType<typeof createClient>,
+  videoId: string,
+  step: string,
+  percent: number,
+) {
+  await supabase
+    .from('generated_videos')
+    .update({ progress_step: step, progress_percent: percent })
+    .eq('id', videoId)
+    .catch(() => {}) // Don't fail the pipeline on progress update errors
+}
+
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
@@ -255,6 +269,8 @@ async function processVideo(
 
   const spokenText = cleanScriptForTTS(script)
 
+  await updateProgress(supabase, videoId, 'Generating voiceover audio...', 10)
+
   // ── Step 1: Generate voiceover audio ─────────────────────────────────────
   let audioUrl: string | null = null
 
@@ -340,6 +356,8 @@ async function processVideo(
       .eq('id', videoId)
   }
 
+  await updateProgress(supabase, videoId, 'Finding matching footage...', 30)
+
   // ── Step 2: Pexels stock footage (smart multi-query search) ──────────────
   const videoClips: string[] = []
 
@@ -397,6 +415,8 @@ async function processVideo(
   const wordCount = spokenText.split(/\s+/).length
   const estimatedDuration = Math.max(20, Math.min(60, Math.round(wordCount / 2.5)))
 
+  await updateProgress(supabase, videoId, 'Rendering video...', 50)
+
   // ── Step 3: Render via Creatomate (cloud) → fallback to self-hosted FFmpeg ──
   let rendered = false
 
@@ -419,6 +439,10 @@ async function processVideo(
       spokenText, companyName, estimatedDuration, supabaseUrl,
     )
     rendered = true
+  }
+
+  if (rendered) {
+    await updateProgress(supabase, videoId, 'Uploading final video...', 85)
   }
 
   if (!rendered) {

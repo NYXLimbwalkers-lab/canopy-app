@@ -23,6 +23,12 @@ import { postToTikTok, isTikTokConnected } from '@/lib/tiktok';
 import { uploadYouTubeShort, isYouTubeConnected } from '@/lib/youtube';
 import { isFacebookConnected } from '@/lib/meta';
 import { generateVideoScript, isAIConfigured } from '@/lib/ai';
+import { VideoComposition, createComposition, getTotalDuration, formatDuration } from '@/lib/video/types';
+import { composeFromScript, applyTemplate } from '@/lib/video/composer';
+import { VIDEO_TEMPLATES, BACKGROUND_MUSIC, AMBIENT_SOUNDS } from '@/lib/video/templates';
+import { SceneTimeline } from '@/components/video/SceneTimeline';
+import { SceneEditor } from '@/components/video/SceneEditor';
+import { StepProgress } from '@/components/video/StepProgress';
 
 // ─── Web Video Player (uses native HTML5 <video> on web) ────────────────────
 function WebVideoPlayer({ url, poster }: { url: string; poster?: string | null }) {
@@ -362,85 +368,81 @@ interface VideoGenerateProps {
   onPostToSocial?: (videoUrl: string) => void;
 }
 
-const PROGRESS_STEPS = [
-  { key: 'voice',   label: 'Generating voiceover',   icon: '🎙' },
-  { key: 'footage', label: 'Finding stock footage',   icon: '🎬' },
-  { key: 'render',  label: 'Rendering your video',    icon: '⚙️' },
+const RENDER_STEPS = [
+  { key: 'voice',   label: 'Generating voiceover audio' },
+  { key: 'footage', label: 'Finding matching footage' },
+  { key: 'render',  label: 'Rendering video' },
+  { key: 'upload',  label: 'Uploading final video' },
+  { key: 'done',    label: 'Complete' },
 ];
+
+function mapProgressToSteps(progressStep: string | null, percent: number, status: string) {
+  const stepMap: Record<string, number> = {
+    'Generating voiceover audio...': 0,
+    'Finding matching footage...': 1,
+    'Rendering video...': 2,
+    'Uploading final video...': 3,
+  };
+
+  const activeIdx = progressStep ? (stepMap[progressStep] ?? -1) : -1;
+
+  return RENDER_STEPS.map((step, i) => ({
+    key: step.key,
+    label: step.label,
+    status: (status === 'ready' || status === 'failed')
+      ? (status === 'failed' && i >= activeIdx && activeIdx >= 0 ? 'error' as const : 'done' as const)
+      : i < activeIdx ? 'done' as const
+      : i === activeIdx ? 'active' as const
+      : 'pending' as const,
+    detail: i === activeIdx && progressStep ? progressStep : undefined,
+  }));
+}
 
 function VideoGenerateModal({ visible, videoId, invokeError, onClose, onPostToSocial }: VideoGenerateProps) {
   const [video, setVideo] = useState<GeneratedVideo | null>(null);
-  const [stepIndex, setStepIndex] = useState(0);
-  const channelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
-  const stepTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const [progressStep, setProgressStep] = useState<string | null>(null);
+  const [progressPercent, setProgressPercent] = useState(0);
 
   useEffect(() => {
     if (!visible || !videoId) {
       setVideo(null);
-      setStepIndex(0);
+      setProgressStep(null);
+      setProgressPercent(0);
       return;
     }
 
-    // Animate through progress steps every ~8 seconds while processing
-    stepTimerRef.current = setInterval(() => {
-      setStepIndex(i => (i < PROGRESS_STEPS.length - 1 ? i + 1 : i));
-    }, 8000);
-
-    // Poll DB immediately (status may already be set since edge function now awaits processing)
+    // Poll DB for real progress updates from the edge function
     const pollStatus = async () => {
       const { data } = await supabase
         .from('generated_videos')
         .select('*')
         .eq('id', videoId)
         .single();
-      if (data && (data.status === 'ready' || data.status === 'failed')) {
+      if (!data) return;
+
+      // Update progress from DB
+      if (data.progress_step) setProgressStep(data.progress_step);
+      if (data.progress_percent) setProgressPercent(data.progress_percent);
+
+      if (data.status === 'ready' || data.status === 'failed') {
         setVideo(data as GeneratedVideo);
-        clearInterval(stepTimerRef.current!);
-        setStepIndex(PROGRESS_STEPS.length - 1);
+        setProgressPercent(data.status === 'ready' ? 100 : progressPercent);
       }
     };
     pollStatus();
+    const pollInterval = setInterval(pollStatus, 3000);
 
-    // Also poll every 15s as a fallback in case Realtime misses an update
-    const pollInterval = setInterval(pollStatus, 8000);
-
-    // Timeout: if still processing after 5 minutes, show as failed
-    // Render server cold-starts + downloads + processes + uploads can take 3-4 min
+    // 5-minute timeout
     const timeout = setTimeout(() => {
       setVideo(prev => {
         if (prev && (prev.status === 'ready' || prev.status === 'failed')) return prev;
-        return { id: videoId, status: 'failed', error_message: 'Video generation timed out. The render server may be warming up — please try again in a minute.' } as GeneratedVideo;
+        return { id: videoId, status: 'failed', error_message: 'Video generation timed out. The render server may be warming up — please try again.' } as GeneratedVideo;
       });
-      clearInterval(stepTimerRef.current!);
-      setStepIndex(PROGRESS_STEPS.length - 1);
     }, 300000);
 
-    // Subscribe to Realtime updates on this video row
-    const channel = supabase
-      .channel(`video-${videoId}`)
-      .on(
-        'postgres_changes',
-        { event: 'UPDATE', schema: 'public', table: 'generated_videos', filter: `id=eq.${videoId}` },
-        (payload) => {
-          const updated = payload.new as GeneratedVideo;
-          setVideo(updated);
-          if (updated.status === 'ready' || updated.status === 'failed') {
-            clearInterval(stepTimerRef.current!);
-            clearInterval(pollInterval);
-            clearTimeout(timeout);
-            setStepIndex(PROGRESS_STEPS.length - 1);
-          }
-        },
-      )
-      .subscribe();
-
-    channelRef.current = channel;
-
     return () => {
-      clearInterval(stepTimerRef.current!);
       clearInterval(pollInterval);
       clearTimeout(timeout);
-      supabase.removeChannel(channel);
     };
   }, [visible, videoId]);
 
@@ -474,33 +476,22 @@ function VideoGenerateModal({ visible, videoId, invokeError, onClose, onPostToSo
         <View style={vg.body}>
           {isPending && (
             <>
-              <ActivityIndicator color={D.green} size="large" style={{ marginBottom: 24 }} />
-              <Text style={vg.processingTitle}>Creating your video…</Text>
-              <Text style={vg.processingSubtitle}>This takes about 60 seconds</Text>
+              <Text style={vg.processingTitle}>Creating your video</Text>
+              <Text style={vg.processingSubtitle}>
+                {progressStep || 'Starting up...'}
+              </Text>
 
-              <View style={vg.stepList}>
-                {PROGRESS_STEPS.map((step, i) => {
-                  const done    = i < stepIndex;
-                  const current = i === stepIndex;
-                  return (
-                    <View key={step.key} style={vg.stepRow}>
-                      <View style={[vg.stepDot, done && vg.stepDotDone, current && vg.stepDotActive]}>
-                        <Text style={vg.stepDotText}>
-                          {done ? '✓' : current ? '◉' : '○'}
-                        </Text>
-                      </View>
-                      <Text style={[vg.stepLabel, done && vg.stepLabelDone, current && vg.stepLabelActive]}>
-                        {step.icon} {step.label}
-                      </Text>
-                    </View>
-                  );
-                })}
+              <View style={{ width: '100%', marginTop: 16 }}>
+                <StepProgress
+                  steps={mapProgressToSteps(progressStep, progressPercent, 'processing')}
+                  accentColor={D.green}
+                />
               </View>
 
               <View style={vg.tipCard}>
-                <Text style={vg.tipTitle}>While you wait…</Text>
+                <Text style={vg.tipTitle}>While you wait...</Text>
                 <Text style={vg.tipText}>
-                  Your video is 1080×1920 (9:16) — ready to post directly to TikTok, Instagram Reels, and YouTube Shorts.
+                  Your video is 9:16 portrait — ready to post directly to TikTok, Instagram Reels, and YouTube Shorts.
                 </Text>
               </View>
             </>
@@ -648,6 +639,12 @@ export default function ContentScreen() {
   const [socialError,       setSocialError]       = useState<string | null>(null);
   const [connectingPlatform, setConnectingPlatform] = useState<string | null>(null);
 
+  // Composition editor state
+  const [composition, setComposition] = useState<VideoComposition | null>(null);
+  const [compositionModal, setCompositionModal] = useState(false);
+  const [selectedSceneId, setSelectedSceneId] = useState<string | null>(null);
+  const [buildingComposition, setBuildingComposition] = useState(false);
+
   // Customization state (pre-generation options)
   const [customizeModal,    setCustomizeModal]    = useState(false);
   const [scriptTone,        setScriptTone]        = useState<'casual' | 'professional' | 'hype' | 'funny'>('casual');
@@ -749,6 +746,41 @@ export default function ContentScreen() {
       setScriptDisplay(null);
     } finally {
       setGeneratingScript(false);
+    }
+  };
+
+  // ── Build composition from script + stock footage ──────────────────────────
+  const buildComposition = async () => {
+    if (!company || !script || !scriptDisplay) return;
+    setBuildingComposition(true);
+    try {
+      // Fetch Pexels footage for each shot in the shotList
+      const shotList = scriptDisplay.hashtags.length > 0
+        ? scriptDisplay.hashtags.map(t => t.replace('#', ''))
+        : ['tree service', 'arborist', 'outdoor work'];
+
+      // Search Pexels for relevant clips
+      const clips: { url: string; thumbnail: string | null; duration: number }[] = [];
+      const pexelsKey = ''; // Will be fetched from edge function, but for preview we use direct search
+      // For now, create composition with empty clips — edge function fills them in during render
+      const comp = composeFromScript(
+        {
+          hook: scriptDisplay.hook,
+          script: scriptDisplay.body,
+          shotList: shotList,
+          hashtags: scriptDisplay.hashtags,
+          caption: scriptDisplay.caption,
+        },
+        clips,
+        company.name,
+      );
+      setComposition(comp);
+      setCompositionModal(true);
+      setScriptModal(false);
+    } catch (err) {
+      console.error('Failed to build composition:', err);
+    } finally {
+      setBuildingComposition(false);
     }
   };
 
@@ -1444,7 +1476,30 @@ export default function ContentScreen() {
                     <Text style={sm.filmBtnArrow}>›</Text>
                   </TouchableOpacity>
 
-                  {/* AI generate option */}
+                  {/* Edit in Video Editor — builds composition */}
+                  <TouchableOpacity
+                    style={[sm.filmBtn, { borderColor: D.purple + '60', backgroundColor: D.purple + '10' }, buildingComposition && { opacity: 0.6 }]}
+                    onPress={buildComposition}
+                    disabled={buildingComposition}
+                    activeOpacity={0.85}
+                  >
+                    <View style={sm.filmBtnLeft}>
+                      {buildingComposition ? (
+                        <ActivityIndicator color={D.purple} style={{ width: 28 }} />
+                      ) : (
+                        <Text style={sm.filmBtnIcon}>🎨</Text>
+                      )}
+                      <View>
+                        <Text style={[sm.filmBtnTitle, { color: D.purple }]}>
+                          {buildingComposition ? 'Building...' : 'Open Video Editor'}
+                        </Text>
+                        <Text style={sm.filmBtnSubtitle}>Timeline, scenes, audio, templates</Text>
+                      </View>
+                    </View>
+                    <Text style={[sm.filmBtnArrow, { color: D.purple }]}>›</Text>
+                  </TouchableOpacity>
+
+                  {/* AI generate option (quick — no editor) */}
                   <TouchableOpacity
                     style={[sm.aiVideoBtn, generatingVideo && { opacity: 0.6 }]}
                     onPress={generateVideo}
@@ -1686,9 +1741,227 @@ export default function ContentScreen() {
         </ScrollView>
       </View>
     </Modal>
+
+    {/* ── Composition Editor Modal ── */}
+    <Modal
+      visible={compositionModal}
+      animationType="slide"
+      presentationStyle="pageSheet"
+      onRequestClose={() => setCompositionModal(false)}
+    >
+      <View style={ce.container}>
+        <View style={ce.header}>
+          <TouchableOpacity onPress={() => setCompositionModal(false)}>
+            <Text style={ce.closeTxt}>Back</Text>
+          </TouchableOpacity>
+          <Text style={ce.headerTitle}>Video Editor</Text>
+          <TouchableOpacity
+            onPress={() => {
+              setCompositionModal(false);
+              if (composition && company && script) {
+                generateVideo();
+              }
+            }}
+            style={ce.renderBtn}
+          >
+            <Text style={ce.renderBtnText}>Render</Text>
+          </TouchableOpacity>
+        </View>
+
+        <ScrollView style={ce.scroll} contentContainerStyle={ce.scrollContent}>
+          {composition && (
+            <>
+              {/* Timeline */}
+              <SceneTimeline
+                composition={composition}
+                selectedSceneId={selectedSceneId}
+                onSelectScene={setSelectedSceneId}
+                onAddScene={() => {
+                  const newScene = { id: `scene_${Date.now()}`, clipUrl: '', clipThumbnail: null, duration: 5, trimStart: 0, caption: '', searchQuery: 'tree service', transition: 'cut' as const };
+                  setComposition(prev => prev ? { ...prev, scenes: [...prev.scenes, newScene] } : prev);
+                }}
+              />
+
+              {/* Selected scene editor */}
+              {selectedSceneId && (() => {
+                const idx = composition.scenes.findIndex(s => s.id === selectedSceneId);
+                const scene = composition.scenes[idx];
+                if (!scene) return null;
+                return (
+                  <SceneEditor
+                    scene={scene}
+                    sceneIndex={idx}
+                    totalScenes={composition.scenes.length}
+                    onUpdate={(updates) => {
+                      setComposition(prev => {
+                        if (!prev) return prev;
+                        const scenes = [...prev.scenes];
+                        scenes[idx] = { ...scenes[idx], ...updates };
+                        return { ...prev, scenes };
+                      });
+                    }}
+                    onDelete={() => {
+                      setComposition(prev => {
+                        if (!prev) return prev;
+                        return { ...prev, scenes: prev.scenes.filter(s => s.id !== selectedSceneId) };
+                      });
+                      setSelectedSceneId(null);
+                    }}
+                    onSwapFootage={() => {/* TODO: Pexels search modal */}}
+                    onMoveUp={() => {
+                      if (idx <= 0) return;
+                      setComposition(prev => {
+                        if (!prev) return prev;
+                        const scenes = [...prev.scenes];
+                        [scenes[idx - 1], scenes[idx]] = [scenes[idx], scenes[idx - 1]];
+                        return { ...prev, scenes };
+                      });
+                    }}
+                    onMoveDown={() => {
+                      if (idx >= composition.scenes.length - 1) return;
+                      setComposition(prev => {
+                        if (!prev) return prev;
+                        const scenes = [...prev.scenes];
+                        [scenes[idx], scenes[idx + 1]] = [scenes[idx + 1], scenes[idx]];
+                        return { ...prev, scenes };
+                      });
+                    }}
+                  />
+                );
+              })()}
+
+              {/* Template picker */}
+              <View style={ce.section}>
+                <Text style={ce.sectionLabel}>STYLE TEMPLATES</Text>
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8 }}>
+                  {VIDEO_TEMPLATES.map(tmpl => (
+                    <TouchableOpacity
+                      key={tmpl.id}
+                      style={ce.templateCard}
+                      onPress={() => {
+                        setComposition(prev => prev ? applyTemplate(prev, tmpl) : prev);
+                      }}
+                      activeOpacity={0.8}
+                    >
+                      <Text style={ce.templateEmoji}>{tmpl.emoji}</Text>
+                      <Text style={ce.templateName}>{tmpl.name}</Text>
+                      <Text style={ce.templateDesc}>{tmpl.description}</Text>
+                    </TouchableOpacity>
+                  ))}
+                </ScrollView>
+              </View>
+
+              {/* Audio controls */}
+              <View style={ce.section}>
+                <Text style={ce.sectionLabel}>AUDIO</Text>
+
+                {/* Background music picker */}
+                <Text style={ce.subLabel}>Background Music</Text>
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 6 }}>
+                  <TouchableOpacity
+                    style={[ce.audioPill, !composition.audio.backgroundMusicUrl && ce.audioPillActive]}
+                    onPress={() => setComposition(prev => prev ? { ...prev, audio: { ...prev.audio, backgroundMusicUrl: null, backgroundMusicName: null } } : prev)}
+                  >
+                    <Text style={[ce.audioPillText, !composition.audio.backgroundMusicUrl && ce.audioPillTextActive]}>None</Text>
+                  </TouchableOpacity>
+                  {BACKGROUND_MUSIC.map(m => (
+                    <TouchableOpacity
+                      key={m.id}
+                      style={[ce.audioPill, composition.audio.backgroundMusicUrl === m.url && ce.audioPillActive]}
+                      onPress={() => setComposition(prev => prev ? { ...prev, audio: { ...prev.audio, backgroundMusicUrl: m.url, backgroundMusicName: m.name } } : prev)}
+                    >
+                      <Text style={[ce.audioPillText, composition.audio.backgroundMusicUrl === m.url && ce.audioPillTextActive]}>🎵 {m.name}</Text>
+                    </TouchableOpacity>
+                  ))}
+                </ScrollView>
+
+                {/* Ambient sound picker */}
+                <Text style={ce.subLabel}>Ambient Sounds</Text>
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 6 }}>
+                  <TouchableOpacity
+                    style={[ce.audioPill, !composition.audio.ambientSoundUrl && ce.audioPillActive]}
+                    onPress={() => setComposition(prev => prev ? { ...prev, audio: { ...prev.audio, ambientSoundUrl: null, ambientSoundName: null } } : prev)}
+                  >
+                    <Text style={[ce.audioPillText, !composition.audio.ambientSoundUrl && ce.audioPillTextActive]}>None</Text>
+                  </TouchableOpacity>
+                  {AMBIENT_SOUNDS.map(a => (
+                    <TouchableOpacity
+                      key={a.id}
+                      style={[ce.audioPill, composition.audio.ambientSoundUrl === a.url && ce.audioPillActive]}
+                      onPress={() => setComposition(prev => prev ? { ...prev, audio: { ...prev.audio, ambientSoundUrl: a.url, ambientSoundName: a.name } } : prev)}
+                    >
+                      <Text style={[ce.audioPillText, composition.audio.ambientSoundUrl === a.url && ce.audioPillTextActive]}>🔊 {a.name}</Text>
+                    </TouchableOpacity>
+                  ))}
+                </ScrollView>
+
+                {/* Caption style */}
+                <Text style={ce.subLabel}>Caption Style</Text>
+                <View style={{ flexDirection: 'row', gap: 6 }}>
+                  {(['bold', 'minimal', 'subtitle', 'none'] as const).map(cs => (
+                    <TouchableOpacity
+                      key={cs}
+                      style={[ce.audioPill, composition.captionStyle === cs && ce.audioPillActive]}
+                      onPress={() => setComposition(prev => prev ? { ...prev, captionStyle: cs } : prev)}
+                    >
+                      <Text style={[ce.audioPillText, composition.captionStyle === cs && ce.audioPillTextActive]}>{cs.charAt(0).toUpperCase() + cs.slice(1)}</Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              </View>
+
+              {/* Render button */}
+              <TouchableOpacity
+                style={ce.bigRenderBtn}
+                onPress={() => {
+                  setCompositionModal(false);
+                  generateVideo();
+                }}
+                activeOpacity={0.85}
+              >
+                <Text style={ce.bigRenderBtnText}>🎬 Render Final Video</Text>
+                <Text style={ce.bigRenderBtnSub}>
+                  {composition.scenes.length} scenes · {formatDuration(getTotalDuration(composition))}
+                </Text>
+              </TouchableOpacity>
+            </>
+          )}
+        </ScrollView>
+      </View>
+    </Modal>
     </>
   );
 }
+
+// ─── Composition editor styles ──────────────────────────────────────────────
+const ce = StyleSheet.create({
+  container:     { flex: 1, backgroundColor: D.bg },
+  header:        { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: Theme.layout.screenPadding, paddingTop: Theme.space.xl, borderBottomWidth: 1, borderBottomColor: D.border, backgroundColor: D.surface },
+  closeTxt:      { fontSize: Theme.font.size.body, color: D.textSec, fontWeight: Theme.font.weight.semibold },
+  headerTitle:   { fontSize: Theme.font.size.subtitle, fontWeight: Theme.font.weight.semibold, color: D.text },
+  renderBtn:     { backgroundColor: D.green, paddingHorizontal: 16, paddingVertical: 8, borderRadius: Theme.radius.md },
+  renderBtnText: { fontSize: 14, fontWeight: '700' as const, color: '#FFFFFF' },
+  scroll:        { flex: 1 },
+  scrollContent: { padding: Theme.layout.screenPadding, paddingBottom: 48, gap: Theme.space.xl },
+
+  section:       { gap: Theme.space.sm },
+  sectionLabel:  { fontSize: 10, fontWeight: '800' as const, color: D.gold, letterSpacing: 1.5 },
+  subLabel:      { fontSize: 12, color: D.textSec, fontWeight: '600' as const, marginTop: 6 },
+
+  templateCard:  { width: 100, backgroundColor: D.surfaceAlt, borderRadius: 12, padding: 10, gap: 4, borderWidth: 1, borderColor: D.border },
+  templateEmoji: { fontSize: 24 },
+  templateName:  { fontSize: 12, fontWeight: '700' as const, color: D.text },
+  templateDesc:  { fontSize: 10, color: D.textSec, lineHeight: 14 },
+
+  audioPill:          { paddingHorizontal: 12, paddingVertical: 7, borderRadius: 20, backgroundColor: D.surfaceAlt, borderWidth: 1, borderColor: D.border },
+  audioPillActive:    { backgroundColor: D.green + '20', borderColor: D.green },
+  audioPillText:      { fontSize: 12, color: D.textSec, fontWeight: '500' as const },
+  audioPillTextActive:{ color: D.green },
+
+  bigRenderBtn:     { backgroundColor: D.green, borderRadius: Theme.radius.lg, paddingVertical: 18, alignItems: 'center', gap: 4 },
+  bigRenderBtnText: { fontSize: 18, fontWeight: '700' as const, color: '#FFFFFF' },
+  bigRenderBtnSub:  { fontSize: 12, color: 'rgba(255,255,255,0.6)' },
+});
 
 // ─── Main styles ──────────────────────────────────────────────────────────────
 const s = StyleSheet.create({
