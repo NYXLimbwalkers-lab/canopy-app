@@ -1,5 +1,6 @@
-// generate-video — Orchestrates ElevenLabs TTS + Pexels footage + FFmpeg render server
-// Env vars required: ELEVENLABS_API_KEY, PEXELS_API_KEY, RENDER_SERVER_URL
+// generate-video — Orchestrates ElevenLabs TTS + Pexels footage + Creatomate cloud render
+// Env vars required: ELEVENLABS_API_KEY, PEXELS_API_KEY, CREATOMATE_API_KEY
+// Optional: RENDER_SERVER_URL (fallback to self-hosted FFmpeg server)
 // Env vars auto-injected: SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
@@ -60,7 +61,6 @@ Deno.serve(async (req: Request) => {
     const videoId: string = videoRecord.id
 
     // Process video synchronously — Deno Deploy kills dangling promises after response
-    // The client shows a loading state while this runs (~10-15s for TTS + stock footage + render dispatch)
     try {
       await processVideo(supabase, videoId, script, videoType)
     } catch (processErr: unknown) {
@@ -69,7 +69,6 @@ Deno.serve(async (req: Request) => {
         .from('generated_videos')
         .update({ status: 'failed', error_message: msg })
         .eq('id', videoId)
-      // Still return the videoId so the client can show the error via Realtime
     }
 
     return new Response(JSON.stringify({ id: videoId }), {
@@ -88,33 +87,19 @@ Deno.serve(async (req: Request) => {
 // Strip stage directions, shot markers, and formatting from script so TTS only speaks natural words
 function cleanScriptForTTS(raw: string): string {
   return raw
-    .replace(/\[.*?\]/g, '')           // Remove [SHOT], [ACTION], [CLOSE UP] etc.
-    .replace(/^(HOOK|CTA|INTRO|OUTRO|---)\s*:?\s*/gim, '') // Remove section labels
-    .replace(/---+/g, '')              // Remove dividers
-    .replace(/\*\*.*?\*\*/g, '')       // Remove bold markdown
-    .replace(/#+\s*/g, '')             // Remove heading markers
-    .replace(/\n{2,}/g, '\n')          // Collapse multiple newlines
-    .replace(/^\s+|\s+$/gm, '')        // Trim lines
+    .replace(/\[.*?\]/g, '')
+    .replace(/^(HOOK|CTA|INTRO|OUTRO|---)\s*:?\s*/gim, '')
+    .replace(/---+/g, '')
+    .replace(/\*\*.*?\*\*/g, '')
+    .replace(/#+\s*/g, '')
+    .replace(/\n{2,}/g, '\n')
+    .replace(/^\s+|\s+$/gm, '')
     .split('\n')
     .filter(line => line.length > 0)
-    .join('. ')                         // Join as natural sentences
-    .replace(/\.\.\./g, ', ')          // Ellipsis → brief pause
-    .replace(/\.\s*\./g, '.')          // Clean double periods
+    .join('. ')
+    .replace(/\.\.\./g, ', ')
+    .replace(/\.\s*\./g, '.')
     .trim()
-}
-
-// Break script into short caption segments for TikTok-style word display
-function splitIntoCaptionSegments(script: string, maxSegments = 6): string[] {
-  const cleaned = cleanScriptForTTS(script)
-  const sentences = cleaned.split(/(?<=[.!?])\s+/).filter(s => s.length > 5)
-  if (sentences.length <= maxSegments) return sentences
-  // Merge shorter sentences to hit target segment count
-  const merged: string[] = []
-  const perGroup = Math.ceil(sentences.length / maxSegments)
-  for (let i = 0; i < sentences.length; i += perGroup) {
-    merged.push(sentences.slice(i, i + perGroup).join(' '))
-  }
-  return merged.slice(0, maxSegments)
 }
 
 async function processVideo(
@@ -123,9 +108,11 @@ async function processVideo(
   script: string,
   videoType: string,
 ) {
-  const elevenLabsKey = Deno.env.get('ELEVENLABS_API_KEY')
-  const pexelsKey     = Deno.env.get('PEXELS_API_KEY')
-  const supabaseUrl   = Deno.env.get('SUPABASE_URL')!
+  const elevenLabsKey   = Deno.env.get('ELEVENLABS_API_KEY')
+  const pexelsKey       = Deno.env.get('PEXELS_API_KEY')
+  const creatomateKey   = Deno.env.get('CREATOMATE_API_KEY')
+  const renderServerUrl = Deno.env.get('RENDER_SERVER_URL')
+  const supabaseUrl     = Deno.env.get('SUPABASE_URL')!
 
   // Look up company name for watermark
   const { data: videoRow } = await supabase
@@ -149,8 +136,6 @@ async function processVideo(
   let audioUrl: string | null = null
 
   if (elevenLabsKey) {
-    // Josh voice — warm, relatable, younger male — sounds like a real guy on TikTok
-    // Alternative: "Adam" (pNInz6obpgDQGcFmaJgB) for deeper/more authoritative
     const ttsResp = await fetch(
       'https://api.elevenlabs.io/v1/text-to-speech/TxGEqnHWrfWFTfGW9XjX',
       {
@@ -160,10 +145,10 @@ async function processVideo(
           text: spokenText,
           model_id: 'eleven_multilingual_v2',
           voice_settings: {
-            stability: 0.35,           // Lower = more expressive, natural variation
-            similarity_boost: 0.6,     // Lower = less robotic, more human imperfection
-            style: 0.15,               // Slight style exaggeration for engagement
-            use_speaker_boost: true,    // Enhances clarity
+            stability: 0.35,
+            similarity_boost: 0.6,
+            style: 0.15,
+            use_speaker_boost: true,
           },
         }),
       },
@@ -192,7 +177,6 @@ async function processVideo(
 
   if (pexelsKey) {
     const query = VIDEO_TYPE_SEARCH[videoType] ?? 'tree service arborist'
-    // Fetch more clips for variety and better pacing
     const pexelsResp = await fetch(
       `https://api.pexels.com/videos/search?query=${encodeURIComponent(query)}&per_page=5&orientation=portrait&size=medium`,
       { headers: { Authorization: pexelsKey } },
@@ -208,29 +192,179 @@ async function processVideo(
     }
   }
 
-  // ── Step 3: FFmpeg render server ──────────────────────────────────────────
-  const renderServerUrl = Deno.env.get('RENDER_SERVER_URL')
-  if (!renderServerUrl) {
-    throw new Error('RENDER_SERVER_URL not set. Deploy the render server and add the URL to Edge Function Secrets.')
-  }
-
-  const webhookUrl = `${supabaseUrl}/functions/v1/video-webhook`
-
   // Estimate total duration from spoken text (~2.5 words/sec for natural pacing)
   const wordCount = spokenText.split(/\s+/).length
   const estimatedDuration = Math.max(20, Math.min(60, Math.round(wordCount / 2.5)))
 
-  // Build caption segments with timing
-  const segments = splitIntoCaptionSegments(spokenText)
-  const segDuration = estimatedDuration / segments.length
+  // ── Step 3: Render via Creatomate (cloud) or fallback to self-hosted server ──
+  if (creatomateKey) {
+    await renderViaCreatomate(
+      supabase, creatomateKey, videoId, videoClips, audioUrl,
+      spokenText, companyName, estimatedDuration, supabaseUrl,
+    )
+  } else if (renderServerUrl) {
+    await renderViaSelfHosted(
+      supabase, renderServerUrl, videoId, videoClips, audioUrl,
+      spokenText, companyName, estimatedDuration, supabaseUrl,
+    )
+  } else {
+    throw new Error('No render backend configured. Set CREATOMATE_API_KEY or RENDER_SERVER_URL in Edge Function Secrets.')
+  }
+}
 
-  const captionSegments = segments.map((text, i) => ({
+// ── Creatomate cloud rendering ──────────────────────────────────────────────
+async function renderViaCreatomate(
+  supabase: ReturnType<typeof createClient>,
+  apiKey: string,
+  videoId: string,
+  videoClips: string[],
+  audioUrl: string | null,
+  spokenText: string,
+  companyName: string,
+  totalDuration: number,
+  supabaseUrl: string,
+) {
+  // Build a Creatomate source JSON (dynamic template)
+  // 9:16 portrait video with stock clips, voiceover, captions, and watermark
+  const clipDuration = videoClips.length > 0
+    ? totalDuration / videoClips.length
+    : totalDuration
+
+  // Build elements array: video clips as composition, then text overlays
+  const clipElements = videoClips.map((url, i) => ({
+    type: 'video',
+    source: url,
+    trim_start: 0,
+    trim_duration: clipDuration,
+    // Each clip plays sequentially
+    time: i * clipDuration,
+    duration: clipDuration,
+  }))
+
+  // Caption: split into timed segments
+  const sentences = spokenText.split(/(?<=[.!?])\s+/).filter(s => s.length > 5)
+  const maxSegs = Math.min(sentences.length, 6)
+  const segDuration = totalDuration / maxSegs
+  const captionElements = sentences.slice(0, maxSegs).map((text, i) => ({
+    type: 'text',
+    text: text.length > 80 ? text.slice(0, 77) + '...' : text,
+    time: i * segDuration,
+    duration: segDuration,
+    y: '85%',
+    width: '90%',
+    x_alignment: '50%',
+    font_family: 'Montserrat',
+    font_weight: '800',
+    font_size: '7 vmin',
+    fill_color: '#ffffff',
+    stroke_color: '#000000',
+    stroke_width: '1.5 vmin',
+    background_color: 'rgba(0,0,0,0.4)',
+    background_x_padding: '30%',
+    background_y_padding: '15%',
+    background_border_radius: '30%',
+  }))
+
+  // Watermark
+  const watermarkElement = {
+    type: 'text',
+    text: companyName,
+    time: 0,
+    duration: totalDuration,
+    x: '5%',
+    y: '3%',
+    font_family: 'Montserrat',
+    font_weight: '700',
+    font_size: '4 vmin',
+    fill_color: 'rgba(255,255,255,0.8)',
+    stroke_color: 'rgba(0,0,0,0.5)',
+    stroke_width: '0.5 vmin',
+  }
+
+  const elements: any[] = [
+    ...clipElements,
+    watermarkElement,
+    ...captionElements,
+  ]
+
+  // Add audio track if available
+  if (audioUrl) {
+    elements.push({
+      type: 'audio',
+      source: audioUrl,
+      time: 0,
+      duration: totalDuration,
+    })
+  }
+
+  const source = {
+    output_format: 'mp4',
+    width: 1080,
+    height: 1920,
+    duration: totalDuration,
+    elements,
+  }
+
+  const webhookUrl = `${supabaseUrl}/functions/v1/video-webhook`
+
+  // Submit render to Creatomate
+  // Creatomate expects `source` as a JSON string within the request body
+  const renderResp = await fetch('https://api.creatomate.com/v1/renders', {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${apiKey}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      source: source,
+      metadata: JSON.stringify({ videoId }),
+      webhook_url: webhookUrl,
+    }),
+  })
+
+  if (!renderResp.ok) {
+    const errText = await renderResp.text()
+    throw new Error(`Creatomate render failed (${renderResp.status}): ${errText}`)
+  }
+
+  const renderData = await renderResp.json()
+  const renderId = renderData?.[0]?.id
+
+  // Store the render ID for tracking
+  if (renderId) {
+    await supabase
+      .from('generated_videos')
+      .update({ creatomate_render_id: renderId })
+      .eq('id', videoId)
+  }
+
+  // Creatomate will call our webhook when done — no need to wait here
+}
+
+// ── Self-hosted FFmpeg render server (fallback) ─────────────────────────────
+async function renderViaSelfHosted(
+  supabase: ReturnType<typeof createClient>,
+  renderServerUrl: string,
+  videoId: string,
+  videoClips: string[],
+  audioUrl: string | null,
+  spokenText: string,
+  companyName: string,
+  totalDuration: number,
+  supabaseUrl: string,
+) {
+  const webhookUrl = `${supabaseUrl}/functions/v1/video-webhook`
+  const renderApiKey = Deno.env.get('RENDER_API_KEY') || ''
+
+  // Build caption segments with timing
+  const sentences = spokenText.split(/(?<=[.!?])\s+/).filter(s => s.length > 5)
+  const maxSegs = Math.min(sentences.length, 6)
+  const segDuration = totalDuration / maxSegs
+  const captionSegments = sentences.slice(0, maxSegs).map((text, i) => ({
     text: text.length > 80 ? text.slice(0, 77) + '...' : text,
     startTime: i * segDuration,
     duration: segDuration,
   }))
-
-  const renderApiKey = Deno.env.get('RENDER_API_KEY') || ''
 
   const renderResp = await fetch(`${renderServerUrl}/render`, {
     method: 'POST',
@@ -244,7 +378,7 @@ async function processVideo(
       videoClips,
       captionSegments,
       watermarkText: companyName,
-      totalDuration: estimatedDuration,
+      totalDuration,
       webhookUrl,
       supabaseUrl,
       supabaseKey: Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,
