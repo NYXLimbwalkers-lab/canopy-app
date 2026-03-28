@@ -22,6 +22,7 @@ import { supabase } from '@/lib/supabase';
 import { postToTikTok, isTikTokConnected } from '@/lib/tiktok';
 import { uploadYouTubeShort, isYouTubeConnected } from '@/lib/youtube';
 import { isFacebookConnected } from '@/lib/meta';
+import { generateVideoScript, isAIConfigured } from '@/lib/ai';
 
 // ─── Web Video Player (uses native HTML5 <video> on web) ────────────────────
 function WebVideoPlayer({ url, poster }: { url: string; poster?: string | null }) {
@@ -645,10 +646,9 @@ export default function ContentScreen() {
     fetchData().finally(() => setLoading(false));
   }, [fetchData]);
 
-  // ── Script generation ──────────────────────────────────────────────────────
+  // ── Script generation (uses lib/ai.ts with type-specific prompts) ─────────
   const generateScript = async (videoType: string) => {
-    const key = process.env.EXPO_PUBLIC_OPENROUTER_API_KEY;
-    if (!key || !company) {
+    if (!isAIConfigured() || !company) {
       setScript('Connect your OpenRouter API key in settings to generate AI scripts.');
       setScriptModal(true);
       return;
@@ -659,44 +659,20 @@ export default function ContentScreen() {
     setScriptModal(true);
     setScript(null);
 
-    const videoTypeLabel = VIDEO_TYPES.find(v => v.key === videoType)?.label ?? videoType;
-
     try {
-      const resp = await globalThis.fetch('https://openrouter.ai/api/v1/chat/completions', {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${key}`,
-          'Content-Type': 'application/json',
+      const result = await generateVideoScript(
+        {
+          name: company.name,
+          city: company.city,
+          state: company.state,
+          services: company.services_offered,
         },
-        body: JSON.stringify({
-          model: 'anthropic/claude-3-haiku',
-          messages: [
-            {
-              role: 'system',
-              content: `You write viral TikTok scripts that sound like a real person talking — not a commercial. Use contractions, natural pauses, filler words like "honestly" and "look". Think popular blue-collar TikTok creators. Never sound corporate.`,
-            },
-            {
-              role: 'user',
-              content: `Write a "${videoTypeLabel}" TikTok script for ${company.name} in ${company.city ?? 'their area'}.
-
-Rules:
-- Start with a scroll-stopping hook (under 10 words, curiosity or shock)
-- Write ONLY the spoken words — no [SHOT] markers or stage directions
-- 80-120 words total (30-45 seconds when spoken naturally)
-- Sound like you're talking to a friend, not reading a script
-- End with a natural, soft call to action
-
-Format:
-HOOK: (the first line)
----
-(rest of the script as natural speech)`,
-            },
-          ],
-          max_tokens: 300,
-        }),
-      });
-      const json = await resp.json();
-      setScript(json.choices?.[0]?.message?.content ?? 'Could not generate script. Try again.');
+        videoType,
+        {},
+      );
+      // Format script with hook prominently displayed
+      const formattedScript = `HOOK: ${result.hook}\n---\n${result.script}\n\n${result.hashtags.join(' ')}\n\nCaption: ${result.caption}`;
+      setScript(formattedScript);
     } catch {
       setScript('Error generating script. Check your connection and try again.');
     } finally {
