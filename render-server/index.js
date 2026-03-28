@@ -248,31 +248,44 @@ function composeFinal(videoPath, audioPath, captionSegments, watermarkText, tota
       cmd = cmd.input(audioPath);
     }
 
-    // Build filter complex for captions + watermark
+    // Check if drawtext filter is available (requires libfreetype)
+    // On Mac Homebrew FFmpeg it's often missing — skip text overlays if so
+    const hasDrawtext = (() => {
+      try {
+        const { execSync } = require('child_process');
+        const out = execSync('ffmpeg -filters 2>&1', { encoding: 'utf-8' });
+        return out.includes('drawtext');
+      } catch { return false; }
+    })();
+
     const filters = [];
     let lastLabel = '0:v';
 
-    // Add watermark text (top-left) — full 1080p sizes
-    if (watermarkText) {
-      const escaped = watermarkText.replace(/'/g, "'\\''").replace(/:/g, '\\:');
-      filters.push(
-        `[${lastLabel}]drawtext=text='${escaped}':fontsize=36:fontcolor=white@0.7:x=40:y=50:borderw=2:bordercolor=black@0.4[wm]`
-      );
-      lastLabel = 'wm';
-    }
-
-    // Add caption segments (centered bottom) — full 1080p sizes
-    if (captionSegments?.length) {
-      captionSegments.forEach((seg, i) => {
-        const escaped = seg.text.replace(/'/g, "'\\''").replace(/:/g, '\\:');
-        const startTime = seg.startTime || 0;
-        const endTime = startTime + (seg.duration || 5);
-        const outLabel = `cap${i}`;
+    if (hasDrawtext) {
+      // Add watermark text (top-left) — full 1080p sizes
+      if (watermarkText) {
+        const escaped = watermarkText.replace(/'/g, "'\\''").replace(/:/g, '\\:');
         filters.push(
-          `[${lastLabel}]drawtext=text='${escaped}':fontsize=56:fontcolor=white:x=(w-text_w)/2:y=h-250:borderw=4:bordercolor=black@0.8:enable='between(t,${startTime},${endTime})'[${outLabel}]`
+          `[${lastLabel}]drawtext=text='${escaped}':fontsize=36:fontcolor=white@0.7:x=40:y=50:borderw=2:bordercolor=black@0.4[wm]`
         );
-        lastLabel = outLabel;
-      });
+        lastLabel = 'wm';
+      }
+
+      // Add caption segments (centered bottom) — full 1080p sizes
+      if (captionSegments?.length) {
+        captionSegments.forEach((seg, i) => {
+          const escaped = seg.text.replace(/'/g, "'\\''").replace(/:/g, '\\:');
+          const startTime = seg.startTime || 0;
+          const endTime = startTime + (seg.duration || 5);
+          const outLabel = `cap${i}`;
+          filters.push(
+            `[${lastLabel}]drawtext=text='${escaped}':fontsize=56:fontcolor=white:x=(w-text_w)/2:y=h-250:borderw=4:bordercolor=black@0.8:enable='between(t,${startTime},${endTime})'[${outLabel}]`
+          );
+          lastLabel = outLabel;
+        });
+      }
+    } else {
+      console.log('drawtext filter not available — rendering without burned-in captions');
     }
 
     if (filters.length > 0) {
