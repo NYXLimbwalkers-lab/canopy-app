@@ -136,39 +136,47 @@ async function processVideo(
   let audioUrl: string | null = null
 
   if (elevenLabsKey) {
-    const ttsResp = await fetch(
-      'https://api.elevenlabs.io/v1/text-to-speech/TxGEqnHWrfWFTfGW9XjX',
-      {
-        method: 'POST',
-        headers: { 'xi-api-key': elevenLabsKey, 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          text: spokenText,
-          model_id: 'eleven_multilingual_v2',
-          voice_settings: {
-            stability: 0.35,
-            similarity_boost: 0.6,
-            style: 0.15,
-            use_speaker_boost: true,
-          },
-        }),
-      },
-    )
+    try {
+      const ttsResp = await fetch(
+        'https://api.elevenlabs.io/v1/text-to-speech/TxGEqnHWrfWFTfGW9XjX',
+        {
+          method: 'POST',
+          headers: { 'xi-api-key': elevenLabsKey, 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            text: spokenText,
+            model_id: 'eleven_multilingual_v2',
+            voice_settings: {
+              stability: 0.35,
+              similarity_boost: 0.6,
+              style: 0.15,
+              use_speaker_boost: true,
+            },
+          }),
+        },
+      )
 
-    if (ttsResp.ok) {
-      const audioBuffer = await ttsResp.arrayBuffer()
-      const { error: uploadError } = await supabase.storage
-        .from('generated-videos')
-        .upload(`audio/${videoId}.mp3`, new Uint8Array(audioBuffer), {
-          contentType: 'audio/mpeg',
-          upsert: true,
-        })
+      if (ttsResp.ok) {
+        const audioBuffer = await ttsResp.arrayBuffer()
 
-      if (!uploadError) {
-        const { data: { publicUrl } } = supabase.storage
+        // Ensure the storage bucket exists
+        await supabase.storage.createBucket('generated-videos', { public: true }).catch(() => {})
+
+        const { error: uploadError } = await supabase.storage
           .from('generated-videos')
-          .getPublicUrl(`audio/${videoId}.mp3`)
-        audioUrl = publicUrl
+          .upload(`audio/${videoId}.mp3`, new Uint8Array(audioBuffer), {
+            contentType: 'audio/mpeg',
+            upsert: true,
+          })
+
+        if (!uploadError) {
+          const { data: { publicUrl } } = supabase.storage
+            .from('generated-videos')
+            .getPublicUrl(`audio/${videoId}.mp3`)
+          audioUrl = publicUrl
+        }
       }
+    } catch {
+      // ElevenLabs failed — Creatomate TTS fallback will be used in the render step
     }
   }
 
@@ -287,11 +295,20 @@ async function renderViaCreatomate(
     ...captionElements,
   ]
 
-  // Add audio track if available
+  // Add audio track — use ElevenLabs URL if available, otherwise Creatomate built-in TTS
   if (audioUrl) {
     elements.push({
       type: 'audio',
       source: audioUrl,
+      time: 0,
+      duration: totalDuration,
+    })
+  } else {
+    // Fallback: Creatomate's built-in text-to-speech
+    elements.push({
+      type: 'audio',
+      text: spokenText,
+      voice: 'Matthew',  // Creatomate built-in voice
       time: 0,
       duration: totalDuration,
     })
