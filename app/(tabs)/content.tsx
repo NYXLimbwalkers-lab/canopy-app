@@ -48,30 +48,6 @@ function WebVideoPlayer({ url, poster }: { url: string; poster?: string | null }
   return <View ref={containerRef} style={{ width: '100%', height: '100%' }} />;
 }
 
-// ─── Web Video Player (uses native HTML5 <video> on web) ────────────────────
-function WebVideoPlayer({ url, poster }: { url: string; poster?: string | null }) {
-  const containerRef = useRef<View>(null);
-
-  useEffect(() => {
-    if (Platform.OS !== 'web' || !containerRef.current) return;
-    // Access the underlying DOM node for web
-    const node = containerRef.current as unknown as HTMLDivElement;
-    if (!node || !node.querySelector) return;
-    // Clear and insert a <video> element
-    node.innerHTML = '';
-    const video = document.createElement('video');
-    video.src = url;
-    video.controls = true;
-    video.playsInline = true;
-    video.preload = 'metadata';
-    video.style.cssText = 'width:100%;height:100%;border-radius:12px;object-fit:contain;background:#000;';
-    if (poster) video.poster = poster;
-    node.appendChild(video);
-  }, [url, poster]);
-
-  return <View ref={containerRef} style={{ width: '100%', height: '100%' }} />;
-}
-
 // ─── Dark palette (not from Colors — this tab has its own rich dark theme) ───
 const D = {
   bg:         '#0A0F0D',
