@@ -358,7 +358,6 @@ async function processVideo(
       if (pexelsResp.ok) {
         const pexelsData = await pexelsResp.json()
         for (const video of (pexelsData.videos ?? []).slice(0, remaining)) {
-          // Prefer SD quality to reduce download size & RAM usage on render server
           const bestFile = video.video_files?.find((f: any) => f.quality === 'sd' && f.height >= 720)
             ?? video.video_files?.find((f: any) => f.quality === 'sd')
             ?? video.video_files?.find((f: any) => f.quality === 'hd')
@@ -388,7 +387,6 @@ async function processVideo(
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err)
       console.error('Creatomate failed, falling back to self-hosted:', msg)
-      // Fall through to self-hosted on payment/quota errors
     }
   }
 
