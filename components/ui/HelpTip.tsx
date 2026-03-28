@@ -76,6 +76,10 @@ export function GuidanceCard({ title, steps, icon, dark }: {
   icon?: string;
   /** Use dark=true on dark-themed pages like Content Studio */
   dark?: boolean;
+export function GuidanceCard({ title, steps, icon }: {
+  title: string;
+  steps: string[];
+  icon?: string;
 }) {
   const [dismissed, setDismissed] = useState(false);
   if (dismissed) return null;
@@ -95,6 +99,13 @@ export function GuidanceCard({ title, steps, icon, dark }: {
         <Text style={[styles.guideTitle, { color: dTitle }]}>{title}</Text>
         <TouchableOpacity onPress={() => setDismissed(true)} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
           <Text style={[styles.guideDismiss, { color: dDismiss }]}>Got it</Text>
+  return (
+    <View style={styles.guideCard}>
+      <View style={styles.guideHeader}>
+        <Text style={styles.guideIcon}>{icon ?? '📋'}</Text>
+        <Text style={styles.guideTitle}>{title}</Text>
+        <TouchableOpacity onPress={() => setDismissed(true)} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+          <Text style={styles.guideDismiss}>Got it</Text>
         </TouchableOpacity>
       </View>
       {steps.map((step, i) => (
@@ -103,6 +114,10 @@ export function GuidanceCard({ title, steps, icon, dark }: {
             <Text style={[styles.guideStepNumText, { color: dNumText }]}>{i + 1}</Text>
           </View>
           <Text style={[styles.guideStepText, { color: dStep }]}>{step}</Text>
+          <View style={styles.guideStepNum}>
+            <Text style={styles.guideStepNumText}>{i + 1}</Text>
+          </View>
+          <Text style={styles.guideStepText}>{step}</Text>
         </View>
       ))}
     </View>
