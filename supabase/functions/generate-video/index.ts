@@ -66,6 +66,7 @@ Deno.serve(async (req: Request) => {
 
   try {
     const { script, videoType, companyId, captionStyle, pacing, clipPrefix, composition } = await req.json()
+    const { script, videoType, companyId, captionStyle, pacing, clipPrefix } = await req.json()
 
     if (!script || !videoType || !companyId) {
       return new Response(JSON.stringify({ error: 'Missing script, videoType, or companyId' }), {
@@ -93,6 +94,7 @@ Deno.serve(async (req: Request) => {
     // Process video synchronously — Deno Deploy kills dangling promises after response
     try {
       await processVideo(supabase, videoId, script, videoType, renderCaptionStyle, renderPacing, clipPrefix, composition)
+      await processVideo(supabase, videoId, script, videoType, renderCaptionStyle, renderPacing, clipPrefix)
     } catch (processErr: unknown) {
       const msg = processErr instanceof Error ? processErr.message : 'Processing failed'
       await supabase

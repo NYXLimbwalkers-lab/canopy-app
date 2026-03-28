@@ -834,6 +834,11 @@ export default function ContentScreen() {
       // Upload user clips if needed
       let clipPrefix: string | null = null;
       if (footageSource === 'upload' && uploadedClips.length > 0) {
+      // If user has uploaded clips, upload them to a temp staging path first
+      // so the edge function can find them when it runs processVideo()
+      let clipPrefix: string | null = null;
+      if (footageSource === 'upload' && uploadedClips.length > 0) {
+        // Use a temporary ID for staging — will be moved by the edge function
         clipPrefix = `staging-${Date.now()}`;
         await supabase.storage.createBucket('generated-videos', { public: true }).catch(() => {});
         for (let i = 0; i < uploadedClips.length; i++) {
@@ -862,6 +867,9 @@ export default function ContentScreen() {
           pacing: videoPacing,
           clipPrefix,
           composition: comp, // Send full composition to edge function
+          captionStyle,
+          pacing: videoPacing,
+          clipPrefix, // Tell edge function where to find uploaded clips
         },
       });
       if (error) throw error;
