@@ -785,23 +785,13 @@ export default function ContentScreen() {
     setVideoJobId(null);
 
     try {
-      // First invoke to create the DB record
-      const { data, error } = await supabase.functions.invoke('generate-video', {
-        body: {
-          script,
-          videoType: selectedVideoType,
-          companyId: company.id,
-          captionStyle,
-          pacing: videoPacing,
-          hasUserClips: footageSource === 'upload' && uploadedClips.length > 0,
-        },
-      });
-      if (error) throw error;
-      const videoId = data?.id;
-      setVideoJobId(videoId ?? null);
-
-      // Upload user clips to Supabase storage if they selected "My Clips"
-      if (videoId && footageSource === 'upload' && uploadedClips.length > 0) {
+      // If user has uploaded clips, upload them to a temp staging path first
+      // so the edge function can find them when it runs processVideo()
+      let clipPrefix: string | null = null;
+      if (footageSource === 'upload' && uploadedClips.length > 0) {
+        // Use a temporary ID for staging — will be moved by the edge function
+        clipPrefix = `staging-${Date.now()}`;
+        await supabase.storage.createBucket('generated-videos', { public: true }).catch(() => {});
         for (let i = 0; i < uploadedClips.length; i++) {
           const clip = uploadedClips[i];
           try {
@@ -809,7 +799,7 @@ export default function ContentScreen() {
             const blob = await resp.blob();
             await supabase.storage
               .from('generated-videos')
-              .upload(`${videoId}/clips/clip_${i}.mp4`, blob, {
+              .upload(`${clipPrefix}/clips/clip_${i}.mp4`, blob, {
                 contentType: 'video/mp4',
                 upsert: true,
               });
@@ -818,6 +808,19 @@ export default function ContentScreen() {
           }
         }
       }
+
+      const { data, error } = await supabase.functions.invoke('generate-video', {
+        body: {
+          script,
+          videoType: selectedVideoType,
+          companyId: company.id,
+          captionStyle,
+          pacing: videoPacing,
+          clipPrefix, // Tell edge function where to find uploaded clips
+        },
+      });
+      if (error) throw error;
+      setVideoJobId(data?.id ?? null);
     } catch (err: any) {
       setVideoInvokeError(
         err?.message?.includes('Failed to send')
@@ -887,6 +890,7 @@ export default function ContentScreen() {
       // If all checks fail, all platforms show as disconnected
     }
     setPostSocialConnected({ tiktok, youtube, facebook });
+    // Facebook is disabled until Meta app review is complete
     setPostSocialPlatforms({ tiktok, youtube, facebook: false });
     setPostSocialModal(true);
   };
