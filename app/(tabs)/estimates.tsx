@@ -894,6 +894,8 @@ PRICING STRATEGY:
 - Round to professional-looking numbers ($1,250 not $1,247.50)
 - For large/complex jobs, consider adding: equipment mobilization, traffic control, permit costs
 - Always think about upselling: if they want removal, suggest stump grinding too
+- If the company owns equipment (crane, grinder, etc.), use their hourly rate — do NOT charge rental fees for owned equipment
+- Factor in the company's actual crew size and labor rates when provided
 
 Return ONLY valid JSON.`,
         },
@@ -1631,9 +1633,29 @@ function CreateEstimateModal({
         return parts.join(', ');
       }).join('\n');
 
+      // Build company operations context for the AI
+      const ops = (company as any)?.operations ?? {};
+      const ownedEquipment = ops.equipment ?? [];
+      const eqRates = ops.equipmentRates ?? {};
+      let opsContext = '';
+      if (ownedEquipment.length > 0) {
+        const eqList = ownedEquipment.map((eq: string) => {
+          const rate = eqRates[eq];
+          return rate ? `${eq} (owned, $${rate}/hr)` : `${eq} (owned)`;
+        }).join(', ');
+        opsContext += `\nCOMPANY EQUIPMENT (owned, do NOT charge rental): ${eqList}`;
+      }
+      if (ops.employeeRate) opsContext += `\nEmployee hourly rate: $${ops.employeeRate}/hr`;
+      if (ops.crewSize) opsContext += `\nTypical crew size: ${ops.crewSize} workers`;
+      if (ops.yearlyInsurance) opsContext += `\nYearly insurance: $${ops.yearlyInsurance}`;
+      if (ops.workersComp) opsContext += `\nWorkers comp: $${ops.workersComp}/yr`;
+      if (ops.otherOverhead) opsContext += `\nOther overhead: $${ops.otherOverhead}/yr`;
+      if (ops.overheadNotes) opsContext += `\nNotes: ${ops.overheadNotes}`;
+
       const prompt = `Generate professional tree service estimate line items for this job:
 
 ${itemDescriptions}
+${opsContext ? `\nCOMPANY OPERATIONS:${opsContext}` : ''}
 
 Use 2024-2025 industry-standard pricing. Return ONLY valid JSON array:
 [
@@ -1646,11 +1668,13 @@ Rules:
 - Factor in all hazard conditions with appropriate surcharges
 - Include cleanup as a separate item when applicable
 - Include stump grinding if job is removal (as separate item)
+- If the company OWNS equipment (crane, grinder, etc.), price using their hourly rate — do NOT add rental charges
+- If crew size and hourly rates are provided, use those for labor calculations
 - Use realistic, competitive pricing
 - Round to professional numbers`;
 
       const result = await aiChat([
-        { role: 'system', content: `You are a pricing expert for "${companyName}", a professional tree service. Generate detailed, itemized estimates with industry-standard pricing.` },
+        { role: 'system', content: `You are a pricing expert for "${companyName}", a professional tree service. Generate detailed, itemized estimates based on their specific equipment, crew, and overhead costs. They own their own equipment — never charge rental for equipment they own.` },
         { role: 'user', content: prompt },
       ], { model: 'claude', maxTokens: 1000, temperature: 0.3 });
 

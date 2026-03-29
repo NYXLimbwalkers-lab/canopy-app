@@ -61,6 +61,15 @@ export default function SettingsScreen() {
   const [state, setState] = useState('');
   const [servicesOffered, setServicesOffered] = useState('');
   const [serviceRadius, setServiceRadius] = useState('');
+  // Equipment & overhead
+  const [equipment, setEquipment] = useState<string[]>([]);
+  const [equipmentRates, setEquipmentRates] = useState<Record<string, string>>({});
+  const [employeeRate, setEmployeeRate] = useState('');
+  const [crewSize, setCrewSize] = useState('');
+  const [yearlyInsurance, setYearlyInsurance] = useState('');
+  const [workersComp, setWorkersComp] = useState('');
+  const [otherOverhead, setOtherOverhead] = useState('');
+  const [overheadNotes, setOverheadNotes] = useState('');
 
   // Account fields
   const [userName, setUserName] = useState('');
@@ -104,6 +113,15 @@ export default function SettingsScreen() {
       setCity(company.city ?? '');
       setState(company.state ?? '');
       setServicesOffered(company.services_offered?.join(', ') ?? '');
+      const ops = (company as any).operations ?? {};
+      setEquipment(ops.equipment ?? []);
+      setEquipmentRates(ops.equipmentRates ?? {});
+      setEmployeeRate(ops.employeeRate ?? '');
+      setCrewSize(ops.crewSize ?? '');
+      setYearlyInsurance(ops.yearlyInsurance ?? '');
+      setWorkersComp(ops.workersComp ?? '');
+      setOtherOverhead(ops.otherOverhead ?? '');
+      setOverheadNotes(ops.overheadNotes ?? '');
       setServiceRadius(
         company.service_radius_miles != null
           ? String(company.service_radius_miles)
@@ -222,6 +240,16 @@ export default function SettingsScreen() {
             state: state.trim().toUpperCase().slice(0, 2) || null,
             services_offered: servicesArray.length > 0 ? servicesArray : null,
             service_radius_miles: serviceRadius ? Math.min(Math.max(Number(serviceRadius), 1), 500) : null,
+            operations: {
+              equipment,
+              equipmentRates,
+              employeeRate,
+              crewSize,
+              yearlyInsurance,
+              workersComp,
+              otherOverhead,
+              overheadNotes,
+            },
           })
           .eq('id', company.id);
 
@@ -567,6 +595,139 @@ export default function SettingsScreen() {
             onChangeText={setWebsite}
             placeholder="https://limbwalkers.com"
           />
+        </View>
+
+        {/* ── EQUIPMENT & OVERHEAD ────────────────────────── */}
+        <Text style={styles.sectionHeader}>EQUIPMENT & RATES</Text>
+        <View style={styles.card}>
+          <View style={styles.aiNote}>
+            <Text style={styles.aiNoteText}>
+              Tell the AI what you own so it prices estimates correctly. If you own a crane, it won't charge rental — just your hourly rate.
+            </Text>
+          </View>
+          <Divider />
+
+          {/* Equipment toggles */}
+          <Text style={[styles.rowLabel, { padding: 12, paddingBottom: 4, fontWeight: '700' }]}>Equipment You Own (tap all that apply)</Text>
+          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, padding: 12, paddingTop: 4 }}>
+            {[
+              { label: 'Crane', key: 'crane', icon: '🏗️' },
+              { label: 'Bucket Truck', key: 'bucket_truck', icon: '🚛' },
+              { label: 'Chipper', key: 'chipper', icon: '🪵' },
+              { label: 'Stump Grinder', key: 'stump_grinder', icon: '💨' },
+              { label: 'Skid Steer', key: 'skid_steer', icon: '🚜' },
+              { label: 'Forestry Mulcher', key: 'mulcher', icon: '🌲' },
+              { label: 'Dump Truck', key: 'dump_truck', icon: '🚚' },
+              { label: 'Dump Trailer', key: 'dump_trailer', icon: '🚛' },
+              { label: 'Log Truck', key: 'log_truck', icon: '🪵' },
+              { label: 'Mini Excavator', key: 'excavator', icon: '🏗️' },
+              { label: 'Grapple Truck', key: 'grapple', icon: '🦾' },
+              { label: 'Aerial Lift', key: 'aerial_lift', icon: '⬆️' },
+            ].map(eq => (
+              <TouchableOpacity
+                key={eq.key}
+                style={{
+                  paddingHorizontal: 12, paddingVertical: 8, borderRadius: 20,
+                  borderWidth: 1.5,
+                  borderColor: equipment.includes(eq.key) ? Colors.primary : Colors.border,
+                  backgroundColor: equipment.includes(eq.key) ? Colors.primary + '15' : Colors.surface,
+                }}
+                onPress={() => setEquipment(prev =>
+                  prev.includes(eq.key) ? prev.filter(e => e !== eq.key) : [...prev, eq.key]
+                )}
+                activeOpacity={0.7}
+              >
+                <Text style={{ fontSize: 13, color: equipment.includes(eq.key) ? Colors.primary : Colors.text }}>
+                  {eq.icon} {eq.label}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+          <Divider />
+
+          {/* Hourly rates for owned equipment */}
+          {equipment.length > 0 && (
+            <>
+              <Text style={[styles.rowLabel, { padding: 12, paddingBottom: 4, fontWeight: '700' }]}>Hourly Rates for Your Equipment</Text>
+              {equipment.map(eq => {
+                const label = ({'crane':'Crane','bucket_truck':'Bucket Truck','chipper':'Chipper','stump_grinder':'Stump Grinder','skid_steer':'Skid Steer','mulcher':'Forestry Mulcher','dump_truck':'Dump Truck','dump_trailer':'Dump Trailer','log_truck':'Log Truck','excavator':'Mini Excavator','grapple':'Grapple Truck','aerial_lift':'Aerial Lift'} as any)[eq] || eq;
+                return (
+                  <View key={eq}>
+                    <InputRow
+                      label={`${label} ($/hr)`}
+                      value={equipmentRates[eq] ?? ''}
+                      onChangeText={(t) => setEquipmentRates(prev => ({ ...prev, [eq]: t.replace(/[^0-9.]/g, '') }))}
+                      placeholder="e.g. 150"
+                      keyboardType="decimal-pad"
+                    />
+                    <Divider />
+                  </View>
+                );
+              })}
+            </>
+          )}
+
+          {/* Labor rates */}
+          <InputRow
+            label="Employee hourly rate ($)"
+            value={employeeRate}
+            onChangeText={(t) => setEmployeeRate(t.replace(/[^0-9.]/g, ''))}
+            placeholder="e.g. 25"
+            keyboardType="decimal-pad"
+          />
+          <Divider />
+          <InputRow
+            label="Typical crew size"
+            value={crewSize}
+            onChangeText={(t) => setCrewSize(t.replace(/[^0-9]/g, ''))}
+            placeholder="e.g. 3"
+            keyboardType="number-pad"
+          />
+        </View>
+
+        <Text style={styles.sectionHeader}>OVERHEAD & INSURANCE</Text>
+        <View style={styles.card}>
+          <View style={styles.aiNote}>
+            <Text style={styles.aiNoteText}>
+              These numbers help the AI build estimates that cover your real costs. All fields optional.
+            </Text>
+          </View>
+          <Divider />
+          <InputRow
+            label="Yearly insurance ($)"
+            value={yearlyInsurance}
+            onChangeText={(t) => setYearlyInsurance(t.replace(/[^0-9]/g, ''))}
+            placeholder="e.g. 12000"
+            keyboardType="number-pad"
+          />
+          <Divider />
+          <InputRow
+            label="Workers comp ($/yr)"
+            value={workersComp}
+            onChangeText={(t) => setWorkersComp(t.replace(/[^0-9]/g, ''))}
+            placeholder="e.g. 8000"
+            keyboardType="number-pad"
+          />
+          <Divider />
+          <InputRow
+            label="Other yearly overhead ($)"
+            value={otherOverhead}
+            onChangeText={(t) => setOtherOverhead(t.replace(/[^0-9]/g, ''))}
+            placeholder="e.g. 5000"
+            keyboardType="number-pad"
+          />
+          <Divider />
+          <View style={styles.row}>
+            <Text style={styles.rowLabel}>Notes</Text>
+            <TextInput
+              style={[styles.input, { minHeight: 60, textAlignVertical: 'top' }]}
+              value={overheadNotes}
+              onChangeText={setOverheadNotes}
+              placeholder="Dump fees, fuel costs, etc."
+              placeholderTextColor={Colors.textTertiary}
+              multiline
+            />
+          </View>
         </View>
 
         {/* ── AI CONFIGURATION ─────────────────────────── */}
