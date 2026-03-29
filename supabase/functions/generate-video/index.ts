@@ -427,16 +427,17 @@ async function processVideo(
   let rendered = false
 
   // PRIMARY: Self-hosted render on Mac Mini (free, fast, full quality)
+  let renderError = ''
   if (renderServerUrl) {
     try {
       await renderViaSelfHosted(
         supabase, renderServerUrl, videoId, videoClips, audioUrl,
-        spokenText, companyName, estimatedDuration, supabaseUrl,
+        spokenText, companyName, estimatedDuration, supabaseUrl, textOnly,
       )
       rendered = true
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : String(err)
-      console.error('Local render failed, trying Creatomate:', msg)
+      renderError = err instanceof Error ? err.message : String(err)
+      console.error('Local render failed:', renderError)
     }
   }
 
@@ -455,7 +456,7 @@ async function processVideo(
   }
 
   if (!rendered) {
-    throw new Error('No render backend available. Creatomate credits exhausted and no RENDER_SERVER_URL configured.')
+    throw new Error(`Render failed. Local: ${renderError || 'skipped'}. Creatomate: credits exhausted.`)
   }
 }
 
@@ -775,6 +776,7 @@ async function renderViaSelfHosted(
   companyName: string,
   totalDuration: number,
   supabaseUrl: string,
+  isTextOnly: boolean = false,
 ) {
   const webhookUrl = `${supabaseUrl}/functions/v1/video-webhook`
   const renderApiKey = Deno.env.get('RENDER_API_KEY') || ''
@@ -802,7 +804,7 @@ async function renderViaSelfHosted(
       captionSegments,
       watermarkText: companyName,
       totalDuration,
-      textOnly: textOnly || false,
+      textOnly: isTextOnly || false,
       webhookUrl,
       supabaseUrl,
       supabaseKey: Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,
