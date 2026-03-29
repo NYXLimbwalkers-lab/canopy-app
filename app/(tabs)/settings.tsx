@@ -104,8 +104,9 @@ export default function SettingsScreen() {
   const [savedVisible, setSavedVisible] = useState(false);
   const [savingAI, setSavingAI] = useState(false);
 
-  // Populate fields from store
+  // Populate fields from store — but not while saving (prevents race condition)
   useEffect(() => {
+    if (saving) return;
     if (company) {
       setCompanyName(company.name ?? '');
       setPhone(company.phone ?? '');
@@ -131,7 +132,7 @@ export default function SettingsScreen() {
     if (profile) {
       setUserName(profile.name ?? '');
     }
-  }, [company, profile]);
+  }, [company, profile, saving]);
 
   // Load AI config from AsyncStorage
   useEffect(() => {
@@ -270,7 +271,10 @@ export default function SettingsScreen() {
         return;
       }
 
+      // Refresh company data from DB — this will re-populate all fields
+      // including the operations data we just saved
       await fetchProfile();
+      Toast.success('Settings saved!');
       setSavedVisible(true);
       setTimeout(() => setSavedVisible(false), 2000);
       Toast.success('Settings saved!');
