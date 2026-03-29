@@ -59,7 +59,7 @@ Deno.serve(async (req: Request) => {
   )
 
   try {
-    const { script, videoType, companyId, captionStyle, pacing, clipPrefix } = await req.json()
+    const { script, videoType, companyId, captionStyle, pacing, clipPrefix, textOnly, skipStockFootage } = await req.json()
 
     if (!script || !videoType || !companyId) {
       return new Response(JSON.stringify({ error: 'Missing script, videoType, or companyId' }), {
@@ -378,7 +378,8 @@ async function processVideo(
     console.log(`[${videoId}] Found ${videoClips.length} user-uploaded clips`)
   }
 
-  if (pexelsKey && videoClips.length === 0) {
+  // Only search Pexels if: not text-only mode, not using own clips, and no clips found
+  if (pexelsKey && videoClips.length === 0 && !textOnly && !skipStockFootage) {
     // Creatomate handles rendering — use more clips for variety
     const maxClips = pacing === 'fast' ? 6 : pacing === 'slow' ? 3 : 4
 
@@ -799,6 +800,7 @@ async function renderViaSelfHosted(
       captionSegments,
       watermarkText: companyName,
       totalDuration,
+      textOnly: textOnly || false,
       webhookUrl,
       supabaseUrl,
       supabaseKey: Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,
