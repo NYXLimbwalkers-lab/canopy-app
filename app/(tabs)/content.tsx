@@ -658,7 +658,7 @@ export default function ContentScreen() {
   const [captionStyle,      setCaptionStyle]      = useState<'bold' | 'minimal' | 'subtitle'>('bold');
   const [videoPacing,       setVideoPacing]       = useState<'fast' | 'medium' | 'slow'>('medium');
   // Footage options
-  const [footageSource,     setFootageSource]     = useState<'stock' | 'upload'>('stock');
+  const [footageSource,     setFootageSource]     = useState<'upload' | 'text_only'>('upload');
   const [uploadedClips,     setUploadedClips]     = useState<{ name: string; uri: string }[]>([]);
   const [uploadingClips,    setUploadingClips]    = useState(false);
 
@@ -863,6 +863,8 @@ export default function ContentScreen() {
           captionStyle: comp?.captionStyle ?? captionStyle,
           pacing: videoPacing,
           clipPrefix,
+          textOnly: footageSource === 'text_only', // Black background mode
+          skipStockFootage: footageSource === 'upload', // Don't search Pexels when using own clips
         },
       });
       if (error) throw error;
@@ -1456,8 +1458,8 @@ export default function ContentScreen() {
                     <Text style={sm.styleLabel}>Source</Text>
                     <View style={sm.stylePills}>
                       {([
-                        { key: 'stock', label: 'AI Stock' },
-                        { key: 'upload', label: 'My Clips' },
+                        { key: 'upload', label: '📱 My Clips' },
+                        { key: 'text_only', label: '🖤 Text Only' },
                       ] as const).map(f => (
                         <TouchableOpacity
                           key={f.key}
@@ -1470,6 +1472,14 @@ export default function ContentScreen() {
                       ))}
                     </View>
                   </View>
+
+                  {footageSource === 'text_only' && (
+                    <View style={sm.uploadSection}>
+                      <Text style={{ fontSize: 13, color: '#9CA3AF', lineHeight: 19 }}>
+                        Black background with animated captions and voiceover. Clean, professional look that performs great on TikTok and Reels.
+                      </Text>
+                    </View>
+                  )}
 
                   {footageSource === 'upload' && (
                     <View style={sm.uploadSection}>
@@ -1570,7 +1580,9 @@ export default function ContentScreen() {
                         <Text style={[sm.filmBtnSubtitle, { color: 'rgba(255,255,255,0.6)' }]}>
                           {footageSource === 'upload' && uploadedClips.length > 0
                             ? `Your clips · AI voice · captions`
-                            : 'AI stock footage · AI voice · captions'}
+                            : footageSource === 'text_only'
+                            ? 'Black background · AI voice · animated text'
+                            : 'AI voice · captions'}
                         </Text>
                       </View>
                     </View>

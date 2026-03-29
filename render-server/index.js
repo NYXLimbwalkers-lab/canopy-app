@@ -38,13 +38,17 @@ app.post('/render', requireApiKey, async (req, res) => {
     captionSegments,
     watermarkText,
     totalDuration,
+    textOnly,
     webhookUrl,
     supabaseUrl,
     supabaseKey,
   } = req.body;
 
-  if (!videoId || !videoClips?.length) {
-    return res.status(400).json({ error: 'Missing videoId or videoClips' });
+  if (!videoId) {
+    return res.status(400).json({ error: 'Missing videoId' });
+  }
+  if (!textOnly && (!videoClips || !videoClips.length)) {
+    return res.status(400).json({ error: 'Missing videoClips (set textOnly=true for black background mode)' });
   }
 
   // Respond immediately — render async
@@ -60,48 +64,60 @@ app.post('/render', requireApiKey, async (req, res) => {
       console.log(`[${videoId}] ${step} (${pct}%)`);
     };
 
-    await progress('Downloading footage clips...', 55);
-
-    // M4 Mac Mini has plenty of RAM — use all clips
-    const downloads = [];
-    const clipsToUse = videoClips.slice(0, 6);
-
-    // Download video clips
-    const clipPaths = [];
-    for (let i = 0; i < clipsToUse.length; i++) {
-      const clipPath = path.join(jobDir, `clip_${i}.mp4`);
-      clipPaths.push(clipPath);
-      downloads.push(downloadFile(clipsToUse[i], clipPath));
-    }
-
     // Download audio if available
     let audioPath = null;
     if (audioUrl) {
+      await progress('Downloading voiceover...', 55);
       audioPath = path.join(jobDir, 'voiceover.mp3');
-      downloads.push(downloadFile(audioUrl, audioPath));
+      await downloadFile(audioUrl, audioPath);
     }
 
-    await Promise.all(downloads);
-    await progress('Processing video clips...', 65);
+    let concatOutput;
 
-    // Step 1: Normalize all clips to same resolution/format and trim to equal duration
-    const clipDuration = Math.max(3, Math.floor((totalDuration || 30) / clipPaths.length));
-    const normalizedPaths = [];
+    if (textOnly || !videoClips?.length) {
+      // ── TEXT-ONLY MODE: Black background ──────────────────────────────
+      await progress('Creating text background...', 60);
+      concatOutput = path.join(jobDir, 'black.mp4');
+      const { execFileSync } = require('child_process');
+      execFileSync('ffmpeg', [
+        '-y', '-f', 'lavfi', '-i', `color=c=black:s=1080x1920:d=${totalDuration || 30}`,
+        '-c:v', 'libx264', '-preset', 'ultrafast', '-crf', '28', '-pix_fmt', 'yuv420p',
+        concatOutput,
+      ], { maxBuffer: 10 * 1024 * 1024 });
+    } else {
+      // ── CLIPS MODE: Download + process user clips ────────────────────
+      await progress('Downloading footage clips...', 55);
+      const downloads = [];
+      const clipsToUse = videoClips.slice(0, 6);
+      const clipPaths = [];
 
-    for (let i = 0; i < clipPaths.length; i++) {
-      const normPath = path.join(jobDir, `norm_${i}.mp4`);
-      normalizedPaths.push(normPath);
-      await normalizeClip(clipPaths[i], normPath, clipDuration);
+      for (let i = 0; i < clipsToUse.length; i++) {
+        const clipPath = path.join(jobDir, `clip_${i}.mp4`);
+        clipPaths.push(clipPath);
+        downloads.push(downloadFile(clipsToUse[i], clipPath));
+      }
+
+      await Promise.all(downloads);
+      await progress('Processing video clips...', 65);
+
+      // Normalize all clips to same resolution/format
+      const clipDuration = Math.max(3, Math.floor((totalDuration || 30) / clipPaths.length));
+      const normalizedPaths = [];
+
+      for (let i = 0; i < clipPaths.length; i++) {
+        const normPath = path.join(jobDir, `norm_${i}.mp4`);
+        normalizedPaths.push(normPath);
+        await normalizeClip(clipPaths[i], normPath, clipDuration);
+      }
+
+      // Concatenate clips
+      const concatFile = path.join(jobDir, 'concat.txt');
+      const concatContent = normalizedPaths.map(p => `file '${p}'`).join('\n');
+      fs.writeFileSync(concatFile, concatContent);
+
+      concatOutput = path.join(jobDir, 'concat.mp4');
+      await concatClips(concatFile, concatOutput);
     }
-
-    // Step 2: Create concat file for FFmpeg
-    const concatFile = path.join(jobDir, 'concat.txt');
-    const concatContent = normalizedPaths.map(p => `file '${p}'`).join('\n');
-    fs.writeFileSync(concatFile, concatContent);
-
-    // Step 3: Concatenate clips
-    const concatOutput = path.join(jobDir, 'concat.mp4');
-    await concatClips(concatFile, concatOutput);
 
     await progress('Adding captions and watermark...', 75);
     // Step 4: Build FFmpeg filter for captions + watermark + audio
