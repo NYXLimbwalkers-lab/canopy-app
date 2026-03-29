@@ -72,17 +72,62 @@ interface Estimate {
 // ─── Tree Service Presets ────────────────────────────────────────────────────
 
 const JOB_TYPES = [
-  { label: 'Tree Removal', icon: '🪓', key: 'removal' },
-  { label: 'Tree Trimming', icon: '✂️', key: 'trimming' },
-  { label: 'Stump Grinding', icon: '🪵', key: 'stump' },
-  { label: 'Pruning', icon: '🌿', key: 'pruning' },
-  { label: 'Lot / Land Clearing', icon: '🏗️', key: 'clearing' },
-  { label: 'Storm Damage', icon: '⛈️', key: 'storm' },
-  { label: 'Hedge Trimming', icon: '🌳', key: 'hedge' },
-  { label: 'Cable & Bracing', icon: '🔗', key: 'cabling' },
-  { label: 'Dead Wooding', icon: '🍂', key: 'deadwood' },
-  { label: 'Crane Work', icon: '🏗️', key: 'crane' },
+  { label: 'Tree Removal', icon: '🪓', key: 'removal', configType: 'tree' },
+  { label: 'Tree Trimming', icon: '✂️', key: 'trimming', configType: 'tree' },
+  { label: 'Stump Grinding', icon: '🪵', key: 'stump', configType: 'stump' },
+  { label: 'Pruning', icon: '🌿', key: 'pruning', configType: 'tree' },
+  { label: 'Lot / Land Clearing', icon: '🏗️', key: 'clearing', configType: 'area' },
+  { label: 'Hauling / Debris', icon: '🚛', key: 'hauling', configType: 'hauling' },
+  { label: 'Cable & Bracing', icon: '🔗', key: 'cabling', configType: 'tree_simple' },
+  { label: 'Forestry Mulching', icon: '🌲', key: 'mulching', configType: 'area' },
+  { label: 'Storm / Emergency', icon: '⛈️', key: 'storm', configType: 'description' },
+  { label: 'Crane Work', icon: '🏗️', key: 'crane', configType: 'description' },
+  { label: 'Dead Wooding', icon: '🍂', key: 'deadwood', configType: 'tree' },
+  { label: 'Hedge Trimming', icon: '🌳', key: 'hedge', configType: 'hedge' },
+  { label: 'Root Removal', icon: '🪨', key: 'root', configType: 'stump' },
+  { label: 'Consultation', icon: '📋', key: 'consult', configType: 'description' },
 ];
+
+const STUMP_SIZES = [
+  { label: 'Small (under 12")', key: 'small' },
+  { label: 'Medium (12-24")', key: 'medium' },
+  { label: 'Large (24"+)', key: 'large' },
+];
+
+const AREA_SIZES = [
+  { label: 'Small Lot', key: 'small' },
+  { label: 'Quarter Acre', key: 'quarter' },
+  { label: 'Half Acre', key: 'half' },
+  { label: 'Acre+', key: 'acre' },
+];
+
+const DENSITY_OPTIONS = [
+  { label: 'Light', key: 'light' },
+  { label: 'Medium', key: 'medium' },
+  { label: 'Heavy', key: 'heavy' },
+];
+
+const HAUL_MATERIALS = [
+  { label: 'Brush', key: 'brush' },
+  { label: 'Logs', key: 'logs' },
+  { label: 'Debris', key: 'debris' },
+  { label: 'Mixed', key: 'mixed' },
+];
+
+const PAYMENT_PREFS = [
+  { label: 'Cash', key: 'cash' },
+  { label: 'Check', key: 'check' },
+  { label: 'Card', key: 'card' },
+  { label: 'Invoice', key: 'invoice' },
+];
+
+// Item added during the estimate wizard
+interface EstimateItem {
+  jobType: string;
+  jobLabel: string;
+  config: Record<string, any>;
+  summary: string; // Human-readable one-liner
+}
 
 const TREE_TYPES = [
   { label: 'Oak', icon: '🌳', wood: 'hardwood' },
@@ -1361,7 +1406,7 @@ Rules:
 
 // ─── POS-Style Estimate Builder (McDonald's register / kiosk) ───────────────
 
-const WIZARD_STEPS = ['Customer', 'Job Type', 'Tree Details', 'Hazards & Cleanup', 'Review & Price'];
+const WIZARD_STEPS = ['Customer', 'Service', 'Configure', 'Items', 'Review'];
 
 function CreateEstimateModal({
   visible,
@@ -1383,9 +1428,15 @@ function CreateEstimateModal({
   const [customerName, setCustomerName] = useState('');
   const [customerEmail, setCustomerEmail] = useState('');
   const [customerPhone, setCustomerPhone] = useState('');
+  const [customerAddress, setCustomerAddress] = useState('');
+  const [customerCity, setCustomerCity] = useState('');
+  const [customerState, setCustomerState] = useState('');
+  const [paymentPref, setPaymentPref] = useState('');
 
-  // Job selections
-  const [selectedJobs, setSelectedJobs] = useState<string[]>([]);
+  // Multi-item wizard
+  const [items, setItems] = useState<EstimateItem[]>([]);
+  const [currentJobType, setCurrentJobType] = useState<string | null>(null);
+  const [currentConfig, setCurrentConfig] = useState<Record<string, any>>({});
 
   // Tree details
   const [selectedTreeTypes, setSelectedTreeTypes] = useState<string[]>([]);
@@ -1423,7 +1474,13 @@ function CreateEstimateModal({
     setCustomerName('');
     setCustomerEmail('');
     setCustomerPhone('');
-    setSelectedJobs([]);
+    setCustomerAddress('');
+    setCustomerCity('');
+    setCustomerState('');
+    setPaymentPref('');
+    setItems([]);
+    setCurrentJobType(null);
+    setCurrentConfig({});
     setSelectedTreeTypes([]);
     setTreeHeight(30);
     setTreeCount(1);
@@ -1537,8 +1594,8 @@ function CreateEstimateModal({
 
   // AI Generate from selections
   const handleAIGenerate = async () => {
-    if (selectedJobs.length === 0) {
-      Alert.alert('Select Job Type', 'Go back and pick at least one type of work.');
+    if (items.length === 0) {
+      Alert.alert('No Items', 'Go back and add at least one service item.');
       return;
     }
 
@@ -1549,19 +1606,26 @@ function CreateEstimateModal({
 
     setAiGenerating(true);
     try {
-      const jobLabels = selectedJobs.map(k => JOB_TYPES.find(j => j.key === k)?.label || k).join(', ');
-      const treeLabels = selectedTreeTypes.map(t => TREE_TYPES.find(tr => tr.label === t)?.label || t).join(', ');
-      const hazardLabels = selectedHazards.map(h => HAZARD_FACTORS.find(f => f.key === h)?.label || h).join(', ');
-      const cleanupLabels = selectedCleanup.map(c => CLEANUP_OPTIONS.find(o => o.key === c)?.label || c).join(', ');
+      const itemDescriptions = items.map(item => {
+        const parts = [`${item.jobLabel}`];
+        const c = item.config;
+        if (c.treeTypes?.length) parts.push(`Species: ${c.treeTypes.join(', ')}`);
+        if (c.treeHeight) parts.push(`Height: ${c.treeHeight}ft`);
+        if (c.treeCount > 1) parts.push(`Count: ${c.treeCount}`);
+        if (c.hazards?.length && !c.hazards.includes('none')) parts.push(`Hazards: ${c.hazards.join(', ')}`);
+        if (c.cleanup?.length) parts.push(`Cleanup: ${c.cleanup.join(', ')}`);
+        if (c.stumpSize) parts.push(`Size: ${c.stumpSize}`);
+        if (c.areaSize) parts.push(`Area: ${c.areaSize}`);
+        if (c.density) parts.push(`Density: ${c.density}`);
+        if (c.material) parts.push(`Material: ${c.material}`);
+        if (c.hedgeLength) parts.push(`Length: ${c.hedgeLength}`);
+        if (c.description) parts.push(`Details: ${c.description}`);
+        return parts.join(', ');
+      }).join('\n');
 
       const prompt = `Generate professional tree service estimate line items for this job:
 
-Work type: ${jobLabels}
-Tree species: ${treeLabels || 'Not specified'}
-Tree height: ${getHeightLabel(treeHeight)} (${getSizeCategory(treeHeight)})
-Number of trees: ${treeCount}
-Hazard factors: ${hazardLabels || 'None'}
-Cleanup: ${cleanupLabels || 'Standard cleanup'}
+${itemDescriptions}
 
 Use 2024-2025 industry-standard pricing. Return ONLY valid JSON array:
 [
@@ -1572,7 +1636,7 @@ Rules:
 - 3-8 line items depending on complexity
 - Factor in hardwood/softwood (hardwood costs 20-30% more)
 - Factor in all hazard conditions with appropriate surcharges
-- Include cleanup as a separate item
+- Include cleanup as a separate item when applicable
 - Include stump grinding if job is removal (as separate item)
 - Use realistic, competitive pricing
 - Round to professional numbers`;
@@ -1585,8 +1649,8 @@ Rules:
       const match = result.match(/\[[\s\S]*\]/);
       if (!match) throw new Error('Failed to parse');
 
-      const items = JSON.parse(match[0]);
-      const newItems: LineItem[] = items.map((item: any) => ({
+      const parsedItems = JSON.parse(match[0]);
+      const newItems: LineItem[] = parsedItems.map((item: any) => ({
         description: item.description || '',
         qty: Number(item.qty) || 1,
         rate: Number(item.rate) || 0,
@@ -1624,6 +1688,7 @@ Rules:
     try {
       let customerId = selectedCustomerId;
       if (!customerId) {
+        const fullAddress = [customerAddress.trim(), customerCity.trim(), customerState.trim()].filter(Boolean).join(', ') || null;
         const { data: newCustomer, error: custError } = await supabase
           .from('customers')
           .insert({
@@ -1631,6 +1696,7 @@ Rules:
             name: customerName.trim(),
             email: customerEmail.trim() || null,
             phone: customerPhone.trim() || null,
+            address: fullAddress,
           })
           .select()
           .single();
@@ -1692,25 +1758,40 @@ Rules:
   // Step validation
   const canGoNext = () => {
     if (step === 0) return customerName.trim().length > 0;
-    if (step === 1) return selectedJobs.length > 0;
-    if (step === 2) return true; // tree details optional
-    if (step === 3) return true; // hazards optional
+    if (step === 1) return true; // tapping a service auto-advances
+    if (step === 2) return true; // config is optional
+    if (step === 3) return items.length > 0;
     return true;
   };
 
   const goNext = () => {
     if (step < WIZARD_STEPS.length - 1) {
       const nextStep = step + 1;
-      setStep(nextStep);
-      // Auto-trigger AI when arriving at review step
-      if (nextStep === 4 && lineItems.length === 0) {
-        handleAIGenerate();
+      // When going from Configure (2) to Items (3), add the current item
+      if (step === 2) {
+        addCurrentItem();
+        setStep(3);
+        return;
       }
+      // When going from Items (3) to Review (4), trigger AI
+      if (step === 3) {
+        setStep(4);
+        if (lineItems.length === 0) {
+          handleAIGenerate();
+        }
+        return;
+      }
+      setStep(nextStep);
     }
   };
 
   const goBack = () => {
-    if (step > 0) setStep(step - 1);
+    if (step === 3 && items.length === 0) {
+      // If no items yet, go back to service selection
+      setStep(1);
+    } else if (step > 0) {
+      setStep(step - 1);
+    }
   };
 
   // ─── Big Grid Button ─────────────────────────────────────────────────────
@@ -1800,96 +1881,324 @@ Rules:
           autoCapitalize="none"
         />
       </View>
+
+      <View style={createStyles.inputGroup}>
+        <Text style={createStyles.inputLabel}>Address</Text>
+        <TextInput
+          style={createStyles.bigInput}
+          value={customerAddress}
+          onChangeText={setCustomerAddress}
+          placeholder="Street Address"
+          placeholderTextColor={Colors.textTertiary}
+        />
+      </View>
+
+      <View style={{ flexDirection: 'row', gap: 10, marginBottom: 14 }}>
+        <View style={{ flex: 2 }}>
+          <Text style={createStyles.inputLabel}>City</Text>
+          <TextInput
+            style={createStyles.bigInput}
+            value={customerCity}
+            onChangeText={setCustomerCity}
+            placeholder="City"
+            placeholderTextColor={Colors.textTertiary}
+          />
+        </View>
+        <View style={{ flex: 1 }}>
+          <Text style={createStyles.inputLabel}>State</Text>
+          <TextInput
+            style={createStyles.bigInput}
+            value={customerState}
+            onChangeText={setCustomerState}
+            placeholder="State"
+            placeholderTextColor={Colors.textTertiary}
+            maxLength={2}
+            autoCapitalize="characters"
+          />
+        </View>
+      </View>
+
+      <Text style={createStyles.sectionHeading}>Payment Preference (optional)</Text>
+      <View style={createStyles.gridContainer}>
+        {PAYMENT_PREFS.map(p => (
+          <TouchableOpacity
+            key={p.key}
+            style={[createStyles.gridBtn, { width: (SCREEN_WIDTH - 32 - 10) / 2 }, paymentPref === p.key && createStyles.gridBtnSelected]}
+            onPress={() => setPaymentPref(paymentPref === p.key ? '' : p.key)}
+            activeOpacity={0.7}
+          >
+            <Text style={[createStyles.gridBtnLabel, paymentPref === p.key && createStyles.gridBtnLabelSelected]}>{p.label}</Text>
+          </TouchableOpacity>
+        ))}
+      </View>
     </View>
   );
 
   const renderStep1JobType = () => (
     <View style={createStyles.stepBody}>
       <Text style={createStyles.stepTitle}>What work needs done?</Text>
-      <Text style={createStyles.stepSubtitle}>Tap all that apply</Text>
+      <Text style={createStyles.stepSubtitle}>Tap one to configure it</Text>
+
+      {items.length > 0 && (
+        <View style={{ gap: 6, marginBottom: 16 }}>
+          <Text style={{ fontSize: 12, fontWeight: '700' as any, color: Colors.textSecondary, letterSpacing: 1 }}>ITEMS ADDED ({items.length})</Text>
+          {items.map((item, i) => (
+            <View key={i} style={{ flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: Colors.surface, padding: 10, borderRadius: 10, borderWidth: 1, borderColor: Colors.border }}>
+              <Text style={{ flex: 1, fontSize: 14, color: Colors.text }}>{item.jobLabel}: {item.summary}</Text>
+              <TouchableOpacity onPress={() => setItems(prev => prev.filter((_, j) => j !== i))}>
+                <Text style={{ color: '#F87171', fontSize: 16, fontWeight: '700' as any }}>✕</Text>
+              </TouchableOpacity>
+            </View>
+          ))}
+        </View>
+      )}
 
       <View style={createStyles.gridContainer}>
-        {JOB_TYPES.map(job =>
-          renderGridButton(
-            job.key,
-            job.label,
-            job.icon,
-            selectedJobs.includes(job.key),
-            () => toggleItem(selectedJobs, job.key, setSelectedJobs),
-          )
-        )}
+        {JOB_TYPES.map(jt => (
+          <TouchableOpacity
+            key={jt.key}
+            style={[createStyles.gridBtn]}
+            onPress={() => {
+              setCurrentJobType(jt.key);
+              setCurrentConfig({});
+              setStep(2);
+            }}
+            activeOpacity={0.7}
+          >
+            <Text style={createStyles.gridBtnIcon}>{jt.icon}</Text>
+            <Text style={createStyles.gridBtnLabel}>{jt.label}</Text>
+          </TouchableOpacity>
+        ))}
       </View>
     </View>
   );
 
-  const renderStep2TreeDetails = () => (
-    <View style={createStyles.stepBody}>
-      <Text style={createStyles.stepTitle}>Tree Details</Text>
-      <Text style={createStyles.stepSubtitle}>Species, height, and count</Text>
+  const currentJobConfig = JOB_TYPES.find(j => j.key === currentJobType);
 
-      <Text style={createStyles.sectionHeading}>Species (tap all that apply)</Text>
-      <View style={createStyles.gridContainer}>
-        {TREE_TYPES.map(tree =>
-          renderGridButton(
-            tree.label,
-            tree.label,
-            tree.icon,
-            selectedTreeTypes.includes(tree.label),
-            () => toggleItem(selectedTreeTypes, tree.label, setSelectedTreeTypes),
-          )
+  const renderStep2Configure = () => {
+    const configType = currentJobConfig?.configType ?? 'description';
+
+    return (
+      <View style={{ gap: 16 }}>
+        <Text style={createStyles.stepTitle}>Configure: {currentJobConfig?.label}</Text>
+
+        {/* Tree services: species, height, count, hazards, cleanup */}
+        {configType === 'tree' && (
+          <>
+            <Text style={createStyles.sectionHeading}>Species</Text>
+            <View style={createStyles.gridContainer}>
+              {TREE_TYPES.map(tt => (
+                <TouchableOpacity key={tt.label} style={[createStyles.gridBtn, selectedTreeTypes.includes(tt.label) && createStyles.gridBtnSelected]} onPress={() => toggleItem(selectedTreeTypes, tt.label, setSelectedTreeTypes)} activeOpacity={0.7}>
+                  <Text style={createStyles.gridBtnIcon}>{tt.icon}</Text>
+                  <Text style={[createStyles.gridBtnLabel, selectedTreeTypes.includes(tt.label) && createStyles.gridBtnLabelSelected]}>{tt.label}</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+            {renderHeightSlider()}
+            {renderTreeCountPicker()}
+            <Text style={createStyles.sectionHeading}>Hazards</Text>
+            <View style={createStyles.gridContainer}>
+              {HAZARD_FACTORS.map(h => (
+                <TouchableOpacity key={h.key} style={[createStyles.gridBtn, selectedHazards.includes(h.key) && createStyles.gridBtnSelected]} onPress={() => toggleItem(selectedHazards, h.key, setSelectedHazards)} activeOpacity={0.7}>
+                  <Text style={createStyles.gridBtnIcon}>{h.icon}</Text>
+                  <Text style={[createStyles.gridBtnLabel, selectedHazards.includes(h.key) && createStyles.gridBtnLabelSelected]}>{h.label}</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+            <Text style={createStyles.sectionHeading}>Cleanup</Text>
+            <View style={createStyles.gridContainer}>
+              {CLEANUP_OPTIONS.map(c => (
+                <TouchableOpacity key={c.key} style={[createStyles.gridBtn, selectedCleanup.includes(c.key) && createStyles.gridBtnSelected]} onPress={() => { setSelectedCleanup([c.key]); }} activeOpacity={0.7}>
+                  <Text style={createStyles.gridBtnIcon}>{c.icon}</Text>
+                  <Text style={[createStyles.gridBtnLabel, selectedCleanup.includes(c.key) && createStyles.gridBtnLabelSelected]}>{c.label}</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          </>
+        )}
+
+        {/* Tree simple: just count + height */}
+        {configType === 'tree_simple' && (
+          <>
+            {renderHeightSlider()}
+            {renderTreeCountPicker()}
+          </>
+        )}
+
+        {/* Stump: count + size */}
+        {configType === 'stump' && (
+          <>
+            {renderTreeCountPicker()}
+            <Text style={createStyles.sectionHeading}>Average Size</Text>
+            <View style={createStyles.gridContainer}>
+              {STUMP_SIZES.map(s => (
+                <TouchableOpacity key={s.key} style={[createStyles.gridBtn, (currentConfig.stumpSize === s.key) && createStyles.gridBtnSelected]} onPress={() => setCurrentConfig(prev => ({ ...prev, stumpSize: s.key }))} activeOpacity={0.7}>
+                  <Text style={[createStyles.gridBtnLabel, (currentConfig.stumpSize === s.key) && createStyles.gridBtnLabelSelected]}>{s.label}</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          </>
+        )}
+
+        {/* Area: size + density */}
+        {configType === 'area' && (
+          <>
+            <Text style={createStyles.sectionHeading}>Area Size</Text>
+            <View style={createStyles.gridContainer}>
+              {AREA_SIZES.map(a => (
+                <TouchableOpacity key={a.key} style={[createStyles.gridBtn, (currentConfig.areaSize === a.key) && createStyles.gridBtnSelected]} onPress={() => setCurrentConfig(prev => ({ ...prev, areaSize: a.key }))} activeOpacity={0.7}>
+                  <Text style={[createStyles.gridBtnLabel, (currentConfig.areaSize === a.key) && createStyles.gridBtnLabelSelected]}>{a.label}</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+            <Text style={createStyles.sectionHeading}>Vegetation Density</Text>
+            <View style={createStyles.gridContainer}>
+              {DENSITY_OPTIONS.map(d => (
+                <TouchableOpacity key={d.key} style={[createStyles.gridBtn, (currentConfig.density === d.key) && createStyles.gridBtnSelected]} onPress={() => setCurrentConfig(prev => ({ ...prev, density: d.key }))} activeOpacity={0.7}>
+                  <Text style={[createStyles.gridBtnLabel, (currentConfig.density === d.key) && createStyles.gridBtnLabelSelected]}>{d.label}</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          </>
+        )}
+
+        {/* Hauling: loads + material */}
+        {configType === 'hauling' && (
+          <>
+            {renderTreeCountPicker()}
+            <Text style={createStyles.sectionHeading}>Material Type</Text>
+            <View style={createStyles.gridContainer}>
+              {HAUL_MATERIALS.map(m => (
+                <TouchableOpacity key={m.key} style={[createStyles.gridBtn, (currentConfig.material === m.key) && createStyles.gridBtnSelected]} onPress={() => setCurrentConfig(prev => ({ ...prev, material: m.key }))} activeOpacity={0.7}>
+                  <Text style={[createStyles.gridBtnLabel, (currentConfig.material === m.key) && createStyles.gridBtnLabelSelected]}>{m.label}</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          </>
+        )}
+
+        {/* Hedge: length + height */}
+        {configType === 'hedge' && (
+          <>
+            <Text style={createStyles.sectionHeading}>Approximate Length</Text>
+            <View style={createStyles.gridContainer}>
+              {[{label:'Short (under 20ft)',key:'short'},{label:'Medium (20-50ft)',key:'medium'},{label:'Long (50ft+)',key:'long'}].map(h => (
+                <TouchableOpacity key={h.key} style={[createStyles.gridBtn, (currentConfig.hedgeLength === h.key) && createStyles.gridBtnSelected]} onPress={() => setCurrentConfig(prev => ({ ...prev, hedgeLength: h.key }))} activeOpacity={0.7}>
+                  <Text style={[createStyles.gridBtnLabel, (currentConfig.hedgeLength === h.key) && createStyles.gridBtnLabelSelected]}>{h.label}</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+            {renderHeightSlider()}
+          </>
+        )}
+
+        {/* Description only: storm, crane, consultation */}
+        {configType === 'description' && (
+          <>
+            <Text style={createStyles.stepSubtitle}>Describe the work needed</Text>
+            <TextInput
+              style={[createStyles.bigInput, { minHeight: 100, textAlignVertical: 'top' }]}
+              placeholder="e.g. Large oak fell on garage during last night's storm..."
+              placeholderTextColor={Colors.textTertiary}
+              value={currentConfig.description || ''}
+              onChangeText={(t) => setCurrentConfig(prev => ({ ...prev, description: t }))}
+              multiline
+            />
+          </>
         )}
       </View>
+    );
+  };
 
-      <Text style={[createStyles.sectionHeading, { marginTop: 24 }]}>Tree Height</Text>
-      {renderHeightSlider()}
+  const buildItemSummary = (): string => {
+    const jt = JOB_TYPES.find(j => j.key === currentJobType);
+    const ct = jt?.configType ?? 'description';
+    const parts: string[] = [];
 
-      <View style={{ marginTop: 20 }} />
-      {renderTreeCountPicker()}
-    </View>
-  );
+    if (ct === 'tree') {
+      if (treeCount > 1) parts.push(`${treeCount}x`);
+      if (selectedTreeTypes.length) parts.push(selectedTreeTypes.join(', '));
+      parts.push(`${treeHeight}ft`);
+      if (selectedHazards.length && !selectedHazards.includes('none')) parts.push(`(${selectedHazards.length} hazards)`);
+    } else if (ct === 'stump') {
+      parts.push(`${treeCount} stump${treeCount > 1 ? 's' : ''}`);
+      if (currentConfig.stumpSize) parts.push(currentConfig.stumpSize);
+    } else if (ct === 'area') {
+      if (currentConfig.areaSize) parts.push(currentConfig.areaSize);
+      if (currentConfig.density) parts.push(`${currentConfig.density} density`);
+    } else if (ct === 'hauling') {
+      parts.push(`${treeCount} load${treeCount > 1 ? 's' : ''}`);
+      if (currentConfig.material) parts.push(currentConfig.material);
+    } else if (ct === 'hedge') {
+      if (currentConfig.hedgeLength) parts.push(currentConfig.hedgeLength);
+      parts.push(`${treeHeight}ft tall`);
+    } else if (ct === 'description') {
+      if (currentConfig.description) parts.push(currentConfig.description.substring(0, 50));
+    } else if (ct === 'tree_simple') {
+      parts.push(`${treeCount} tree${treeCount > 1 ? 's' : ''}, ${treeHeight}ft`);
+    }
 
-  const renderStep3Hazards = () => (
-    <View style={createStyles.stepBody}>
-      <Text style={createStyles.stepTitle}>Hazards & Cleanup</Text>
-      <Text style={createStyles.stepSubtitle}>Affects pricing — tap all that apply</Text>
+    return parts.join(' \u00b7 ') || 'Configured';
+  };
 
-      <Text style={createStyles.sectionHeading}>Hazards</Text>
-      <View style={createStyles.gridContainer}>
-        {HAZARD_FACTORS.map(hazard =>
-          renderGridButton(
-            hazard.key,
-            hazard.label,
-            hazard.icon,
-            selectedHazards.includes(hazard.key),
-            () => toggleItem(selectedHazards, hazard.key, setSelectedHazards),
-          )
-        )}
-      </View>
+  const addCurrentItem = () => {
+    const jt = JOB_TYPES.find(j => j.key === currentJobType);
+    if (!jt) return;
 
-      <Text style={[createStyles.sectionHeading, { marginTop: 24 }]}>Cleanup</Text>
-      <View style={createStyles.gridContainer}>
-        {CLEANUP_OPTIONS.map(opt =>
-          renderGridButton(
-            opt.key,
-            opt.label,
-            opt.icon,
-            selectedCleanup.includes(opt.key),
-            () => setSelectedCleanup(selectedCleanup.includes(opt.key) ? [] : [opt.key]),
-          )
-        )}
-      </View>
+    const newItem: EstimateItem = {
+      jobType: currentJobType!,
+      jobLabel: jt.label,
+      config: {
+        ...currentConfig,
+        treeTypes: [...selectedTreeTypes],
+        treeHeight,
+        treeCount,
+        hazards: [...selectedHazards],
+        cleanup: [...selectedCleanup],
+      },
+      summary: buildItemSummary(),
+    };
+
+    setItems(prev => [...prev, newItem]);
+    // Reset config for next item
+    setCurrentJobType(null);
+    setCurrentConfig({});
+    setSelectedTreeTypes([]);
+    setTreeHeight(30);
+    setTreeCount(1);
+    setSelectedHazards([]);
+    setSelectedCleanup([]);
+  };
+
+  const renderStep3ItemAdded = () => (
+    <View style={{ gap: 16 }}>
+      <Text style={createStyles.stepTitle}>Item Added!</Text>
+      <Text style={createStyles.stepSubtitle}>{items.length} item{items.length !== 1 ? 's' : ''} in this estimate</Text>
+
+      {items.map((item, i) => (
+        <View key={i} style={{ backgroundColor: Colors.surface, padding: 14, borderRadius: 12, borderWidth: 1, borderColor: Colors.border, gap: 4 }}>
+          <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
+            <Text style={{ fontSize: 16, fontWeight: '700' as any, color: Colors.text }}>{item.jobLabel}</Text>
+            <TouchableOpacity onPress={() => setItems(prev => prev.filter((_, j) => j !== i))}>
+              <Text style={{ color: '#F87171', fontWeight: '700' as any }}>Remove</Text>
+            </TouchableOpacity>
+          </View>
+          <Text style={{ fontSize: 14, color: Colors.textSecondary }}>{item.summary}</Text>
+        </View>
+      ))}
+
+      <TouchableOpacity
+        style={{ backgroundColor: Colors.surface, padding: 18, borderRadius: 14, borderWidth: 2, borderColor: Colors.primary, borderStyle: 'dashed', alignItems: 'center', gap: 4 }}
+        onPress={() => setStep(1)}
+        activeOpacity={0.7}
+      >
+        <Text style={{ fontSize: 18, color: Colors.primary, fontWeight: '700' as any }}>+ Add Another Item</Text>
+        <Text style={{ fontSize: 13, color: Colors.textSecondary }}>Removal, trimming, stump grinding, etc.</Text>
+      </TouchableOpacity>
     </View>
   );
 
   const renderStep4Review = () => {
-    // Summary of selections
-    const jobLabels = selectedJobs.map(k => JOB_TYPES.find(j => j.key === k)?.label || k);
-    const treeLabels = selectedTreeTypes;
-    const hazardLabels = selectedHazards
-      .filter(h => h !== 'none')
-      .map(h => HAZARD_FACTORS.find(f => f.key === h)?.label || h);
-    const cleanupLabel = selectedCleanup.map(c => CLEANUP_OPTIONS.find(o => o.key === c)?.label || c).join(', ');
-
     return (
       <View style={createStyles.stepBody}>
         <Text style={createStyles.stepTitle}>Review & Price</Text>
@@ -1901,26 +2210,22 @@ Rules:
             <Text style={createStyles.summaryLabel}>Customer</Text>
             <Text style={createStyles.summaryValue}>{customerName}</Text>
           </View>
-          <View style={createStyles.summaryRow}>
-            <Text style={createStyles.summaryLabel}>Work</Text>
-            <Text style={createStyles.summaryValue}>{jobLabels.join(', ') || 'None'}</Text>
-          </View>
-          <View style={createStyles.summaryRow}>
-            <Text style={createStyles.summaryLabel}>Trees</Text>
-            <Text style={createStyles.summaryValue}>
-              {treeCount}x {treeLabels.join(', ') || 'Not specified'} — {getHeightLabel(treeHeight)}
-            </Text>
-          </View>
-          {hazardLabels.length > 0 && (
+          {customerAddress || customerCity ? (
             <View style={createStyles.summaryRow}>
-              <Text style={createStyles.summaryLabel}>Hazards</Text>
-              <Text style={[createStyles.summaryValue, { color: Colors.danger }]}>{hazardLabels.join(', ')}</Text>
+              <Text style={createStyles.summaryLabel}>Address</Text>
+              <Text style={createStyles.summaryValue}>{[customerAddress, customerCity, customerState].filter(Boolean).join(', ')}</Text>
             </View>
-          )}
-          {cleanupLabel ? (
+          ) : null}
+          {items.map((item, i) => (
+            <View key={i} style={createStyles.summaryRow}>
+              <Text style={createStyles.summaryLabel}>{item.jobLabel}</Text>
+              <Text style={createStyles.summaryValue}>{item.summary}</Text>
+            </View>
+          ))}
+          {paymentPref ? (
             <View style={createStyles.summaryRow}>
-              <Text style={createStyles.summaryLabel}>Cleanup</Text>
-              <Text style={createStyles.summaryValue}>{cleanupLabel}</Text>
+              <Text style={createStyles.summaryLabel}>Payment</Text>
+              <Text style={createStyles.summaryValue}>{paymentPref}</Text>
             </View>
           ) : null}
         </View>
@@ -2005,7 +2310,7 @@ Rules:
     );
   };
 
-  const stepContent = [renderStep0Customer, renderStep1JobType, renderStep2TreeDetails, renderStep3Hazards, renderStep4Review];
+  const stepContent = [renderStep0Customer, renderStep1JobType, renderStep2Configure, renderStep3ItemAdded, renderStep4Review];
 
   return (
     <Modal visible={visible} animationType="slide" presentationStyle="pageSheet" onRequestClose={handleClose}>
@@ -2058,7 +2363,7 @@ Rules:
         </ScrollView>
 
         {/* Bottom nav buttons */}
-        {step < 4 && (
+        {step < 4 && step !== 1 && (
           <View style={createStyles.bottomNav}>
             {step > 0 ? (
               <TouchableOpacity style={createStyles.backBtn} onPress={goBack} activeOpacity={0.7}>
@@ -2074,7 +2379,7 @@ Rules:
               activeOpacity={0.7}
             >
               <Text style={createStyles.nextBtnText}>
-                {step === 3 ? 'Review & Price' : 'Next'}
+                {step === 2 ? 'Add Item' : step === 3 ? 'Review & Price' : 'Next'}
               </Text>
               <Text style={createStyles.nextBtnArrow}>→</Text>
             </TouchableOpacity>
