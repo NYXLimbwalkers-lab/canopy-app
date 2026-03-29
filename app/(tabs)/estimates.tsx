@@ -73,19 +73,25 @@ interface Estimate {
 
 const JOB_TYPES = [
   { label: 'Tree Removal', icon: '🪓', key: 'removal', configType: 'tree' },
-  { label: 'Tree Trimming', icon: '✂️', key: 'trimming', configType: 'tree' },
+  { label: 'Tree Trimming', icon: '✂️', key: 'trimming', configType: 'trimming' },
   { label: 'Stump Grinding', icon: '🪵', key: 'stump', configType: 'stump' },
-  { label: 'Pruning', icon: '🌿', key: 'pruning', configType: 'tree' },
   { label: 'Lot / Land Clearing', icon: '🏗️', key: 'clearing', configType: 'area' },
   { label: 'Hauling / Debris', icon: '🚛', key: 'hauling', configType: 'hauling' },
   { label: 'Cable & Bracing', icon: '🔗', key: 'cabling', configType: 'tree_simple' },
   { label: 'Forestry Mulching', icon: '🌲', key: 'mulching', configType: 'area' },
-  { label: 'Storm / Emergency', icon: '⛈️', key: 'storm', configType: 'description' },
-  { label: 'Crane Work', icon: '🏗️', key: 'crane', configType: 'description' },
-  { label: 'Dead Wooding', icon: '🍂', key: 'deadwood', configType: 'tree' },
   { label: 'Hedge Trimming', icon: '🌳', key: 'hedge', configType: 'hedge' },
   { label: 'Root Removal', icon: '🪨', key: 'root', configType: 'stump' },
   { label: 'Consultation', icon: '📋', key: 'consult', configType: 'description' },
+];
+
+// Sub-types for trimming — shown as step within the trimming config
+const TRIM_TYPES = [
+  { label: 'General Trimming', icon: '✂️', key: 'trim_general' },
+  { label: 'Pruning', icon: '🌿', key: 'trim_pruning' },
+  { label: 'Dead Wooding', icon: '🍂', key: 'trim_deadwood' },
+  { label: 'Demossing', icon: '🌫️', key: 'trim_demoss' },
+  { label: 'Crown Thinning', icon: '🌳', key: 'trim_crown' },
+  { label: 'Canopy Raise', icon: '⬆️', key: 'trim_raise' },
 ];
 
 const STUMP_SIZES = [
@@ -160,6 +166,8 @@ const HAZARD_FACTORS = [
   { label: 'Over Fence', icon: '🔲', key: 'fence' },
   { label: 'Diseased / Dead', icon: '☠️', key: 'diseased' },
   { label: 'Leaning / Risky', icon: '↗️', key: 'leaning' },
+  { label: 'Crane Required', icon: '🏗️', key: 'crane' },
+  { label: 'Storm / Emergency', icon: '⛈️', key: 'storm_emergency' },
   { label: 'None / Open Area', icon: '✅', key: 'none' },
 ];
 
@@ -2017,6 +2025,50 @@ Rules:
           </>
         )}
 
+        {/* Trimming: trim type selector + species, height, count, hazards */}
+        {configType === 'trimming' && (
+          <>
+            <Text style={createStyles.sectionHeading}>Type of Trimming</Text>
+            <View style={createStyles.gridContainer}>
+              {TRIM_TYPES.map(tt => (
+                <TouchableOpacity key={tt.key} style={[createStyles.gridBtn, (currentConfig.trimType === tt.key) && createStyles.gridBtnSelected]} onPress={() => setCurrentConfig(prev => ({ ...prev, trimType: tt.key }))} activeOpacity={0.7}>
+                  <Text style={createStyles.gridBtnIcon}>{tt.icon}</Text>
+                  <Text style={[createStyles.gridBtnLabel, (currentConfig.trimType === tt.key) && createStyles.gridBtnLabelSelected]}>{tt.label}</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+            <Text style={createStyles.sectionHeading}>Species</Text>
+            <View style={createStyles.gridContainer}>
+              {TREE_TYPES.map(tt => (
+                <TouchableOpacity key={tt.label} style={[createStyles.gridBtn, selectedTreeTypes.includes(tt.label) && createStyles.gridBtnSelected]} onPress={() => toggleItem(selectedTreeTypes, tt.label, setSelectedTreeTypes)} activeOpacity={0.7}>
+                  <Text style={createStyles.gridBtnIcon}>{tt.icon}</Text>
+                  <Text style={[createStyles.gridBtnLabel, selectedTreeTypes.includes(tt.label) && createStyles.gridBtnLabelSelected]}>{tt.label}</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+            {renderHeightSlider()}
+            {renderTreeCountPicker()}
+            <Text style={createStyles.sectionHeading}>Hazards & Conditions</Text>
+            <View style={createStyles.gridContainer}>
+              {HAZARD_FACTORS.map(h => (
+                <TouchableOpacity key={h.key} style={[createStyles.gridBtn, selectedHazards.includes(h.key) && createStyles.gridBtnSelected]} onPress={() => toggleItem(selectedHazards, h.key, setSelectedHazards)} activeOpacity={0.7}>
+                  <Text style={createStyles.gridBtnIcon}>{h.icon}</Text>
+                  <Text style={[createStyles.gridBtnLabel, selectedHazards.includes(h.key) && createStyles.gridBtnLabelSelected]}>{h.label}</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+            <Text style={createStyles.sectionHeading}>Cleanup</Text>
+            <View style={createStyles.gridContainer}>
+              {CLEANUP_OPTIONS.map(c => (
+                <TouchableOpacity key={c.key} style={[createStyles.gridBtn, selectedCleanup.includes(c.key) && createStyles.gridBtnSelected]} onPress={() => { setSelectedCleanup([c.key]); }} activeOpacity={0.7}>
+                  <Text style={createStyles.gridBtnIcon}>{c.icon}</Text>
+                  <Text style={[createStyles.gridBtnLabel, selectedCleanup.includes(c.key) && createStyles.gridBtnLabelSelected]}>{c.label}</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          </>
+        )}
+
         {/* Tree simple: just count + height */}
         {configType === 'tree_simple' && (
           <>
@@ -2115,11 +2167,15 @@ Rules:
     const ct = jt?.configType ?? 'description';
     const parts: string[] = [];
 
-    if (ct === 'tree') {
+    if (ct === 'tree' || ct === 'trimming') {
+      if (ct === 'trimming' && currentConfig.trimType) {
+        const trimLabel = TRIM_TYPES.find(t => t.key === currentConfig.trimType)?.label;
+        if (trimLabel) parts.push(trimLabel);
+      }
       if (treeCount > 1) parts.push(`${treeCount}x`);
       if (selectedTreeTypes.length) parts.push(selectedTreeTypes.join(', '));
       parts.push(`${treeHeight}ft`);
-      if (selectedHazards.length && !selectedHazards.includes('none')) parts.push(`(${selectedHazards.length} hazards)`);
+      if (selectedHazards.length && !selectedHazards.includes('none')) parts.push(`(${selectedHazards.length} conditions)`);
     } else if (ct === 'stump') {
       parts.push(`${treeCount} stump${treeCount > 1 ? 's' : ''}`);
       if (currentConfig.stumpSize) parts.push(currentConfig.stumpSize);
