@@ -86,7 +86,7 @@ Deno.serve(async (req: Request) => {
 
     // Process video synchronously — Deno Deploy kills dangling promises after response
     try {
-      await processVideo(supabase, videoId, script, videoType, renderCaptionStyle, renderPacing, clipPrefix)
+      await processVideo(supabase, videoId, script, videoType, renderCaptionStyle, renderPacing, clipPrefix, textOnly, skipStockFootage)
     } catch (processErr: unknown) {
       const msg = processErr instanceof Error ? processErr.message : 'Processing failed'
       await supabase
@@ -239,6 +239,8 @@ async function processVideo(
   captionStyle: string = 'bold',
   pacing: string = 'medium',
   clipPrefix: string | null = null,
+  textOnly: boolean = false,
+  skipStockFootage: boolean = false,
 ) {
   const elevenLabsKey   = Deno.env.get('ELEVENLABS_API_KEY')
   const pexelsKey       = Deno.env.get('PEXELS_API_KEY')
